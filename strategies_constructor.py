@@ -2,11 +2,8 @@
 import torch
 from torch.fx import Graph, Node
 
-from colossalai.amp.naive_amp import FP16Optimizer
-
 from offload_strategy import OffloadStrategiesVector
 from strategy_generator import StrategyGenerator
-from options import SolverOption
 from util import ModelParameters, NodeInfo
 
 class OffloadStrategiesConstructor:
@@ -18,15 +15,13 @@ class OffloadStrategiesConstructor:
         solver_option (SolverOption): a SolverOptions object which specifies the preferences for plan searching.
     """
 
-    def __init__(self, graph: Graph, amp_optimizer: FP16Optimizer=None, solver_option: SolverOption=None):
+    def __init__(self, graph: Graph):
         self.graph = graph
         assert graph.owning_module is not None, 'The given graph is not associated with a owning_module'
         self.root_module = self.graph.owning_module
-        self.amp_optimizer = amp_optimizer
         self.nodes = list(graph.nodes)
         self.leaf_strategies = []
         self.strategy_map = {}
-        self.solver_option = solver_option
         self.no_strategy_nodes = []
 
     def build_strategies_and_cost(self):
@@ -66,17 +61,6 @@ class OffloadStrategiesConstructor:
         def _set_params_info_for_node(node: Node):
             assert node.op in ['call_function', 'call_module']
 
-            def _get_fp16_param_index(param):
-                for group_idx, param_group in enumerate(self.amp_optimizer._fp16_param_groups):
-                    try:
-                        param_idx = param_group.index(param)
-                    except:
-                        continue
-                    return group_idx, param_idx
-
-            # fp16_params = []
-            # fp32_master_params = []
-
             assert hasattr(node, "node_info") and isinstance(node.node_info, NodeInfo)
             node_info = node.node_info
             node_info.has_param = True
@@ -87,10 +71,6 @@ class OffloadStrategiesConstructor:
                 target = node.target
                 submod = self.root_module.get_submodule(target)
                 for p in list(submod.parameters(recurse=False)):
-                    # fp16_params.append(p)
-                    # group_idx, param_idx = _get_fp16_param_index(p)
-                    # fp32_master_params.append(self.amp_optimizer._fp32_master_param_groups[group_idx][param_idx])
-                    # fp32_master_params.append(p.detach().clone().float())
 
                     node_info.param_indices.append(ModelParameters.param_idx)
                     node_info.param_size += p.data.numel() * p.data.element_size()
@@ -106,12 +86,7 @@ class OffloadStrategiesConstructor:
                         atoms = inp_node.target.split(".")
                         for atom in atoms:
                             attr_itr = getattr(attr_itr, atom)
-                        # fp16_params.append(attr_itr)
-                        # group_idx, param_idx = _get_fp16_param_index(attr_itr)
-                        # fp32_master_params.append(self.amp_optimizer._fp32_master_param_groups[group_idx][param_idx])
-                        # fp32_master_params.append(attr_itr.detach().clone().float())
 
-                        # print(type(attr_itr), inp_node.name, attr_itr.data.shape)
                         if isinstance(attr_itr, torch.nn.Parameter):
                             node_info.param_indices.append(ModelParameters.param_idx)
                             node_info.param_size += attr_itr.data.numel() * attr_itr.data.element_size()
