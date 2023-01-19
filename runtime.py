@@ -297,6 +297,6 @@ def runtime_asyn_offload_apply_pass(gm: torch.fx.GraphModule):
             if (node.op == "get_attr") or (node in no_insert_after_node_list):
                 no_insert_after_node_list.append(new_node)
 
-    gm.graph.print_tabular()
+    # gm.graph.print_tabular()
     # print(len(ModelParameters.fp16_params), ModelParameters.param_idx)
     return gm
