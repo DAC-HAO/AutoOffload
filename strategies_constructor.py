@@ -147,6 +147,14 @@ class OffloadStrategiesConstructor:
                             deps_in_region[n_par] -= 1
                 region.nodes.append(n)
 
+                # propagate common node attr if possible
+                if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
+                                                  ]) or _is_cop(n.target):
+                    self.cnode.append(n.name)
+                else:
+                    deps[n] = 0
+                    deps_in_region[n] = 0
+
                 # if the node could free all dependencies in graph
                 # we could begin a new node
                 if _is_sink():
@@ -154,13 +162,17 @@ class OffloadStrategiesConstructor:
                     region = Region(has_param=False, nodes=[])
                     deps_in_region.clear()
 
-                # propagate common node attr if possible
-                if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
-                                                  ]) or _is_cop(n.target):
-                    self.cnode.append(n.name)
-                else:
+                if deps.get(n, None) is not None and deps_in_region.get(n, None) is not None:
                     deps[n] = len([user for user in n.users if user.op != "output"])
                     deps_in_region[n] = deps[n]
+
+                # # propagate common node attr if possible
+                # if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
+                #                                   ]) or _is_cop(n.target):
+                #     self.cnode.append(n.name)
+                # else:
+                #     deps[n] = len([user for user in n.users if user.op != "output"])
+                #     deps_in_region[n] = deps[n]
         return region_list
 
 
