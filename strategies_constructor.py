@@ -85,9 +85,9 @@ class OffloadStrategiesConstructor:
                     inplace = getattr(n.graph.owning_module.get_submodule(n.target), "inplace", False)
                 return inplace
 
-            # return not sum([v for _, v in deps.items()]) and not any(map(_is_inplace, n.users))
+            return not sum([v for _, v in deps.items()]) and not any(map(_is_inplace, n.users))
 
-            return not sum([v for k, v in deps.items() if k in region.nodes]) and not any(map(_is_inplace, n.users))
+            # return not sum([v for k, v in deps.items() if k in region.nodes]) and not any(map(_is_inplace, n.users))
 
         def _set_region_info(cur_reg: Region):
             pass
