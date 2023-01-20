@@ -86,9 +86,7 @@ class OffloadStrategiesConstructor:
                 print(n.op, n.name, inplace)
                 return inplace
 
-            return not sum([v for _, v in deps.items()]) and not any(map(_is_inplace, n.users))
-
-            # return not sum([v for k, v in deps.items() if k in region.nodes]) and not any(map(_is_inplace, n.users))
+            return (not sum([v for _, v in deps.items()]) or (not sum([v for _, v in deps_in_region.items()])) and deps_in_region.__len__()>0) and not any(map(_is_inplace, n.users))
 
         def _set_region_info(cur_reg: Region):
             pass
@@ -134,6 +132,7 @@ class OffloadStrategiesConstructor:
             self.cnode = []
 
         deps = {}
+        deps_in_region = {}
         region_list = []
         region = Region(has_param=False, nodes=[])
 
@@ -143,6 +142,8 @@ class OffloadStrategiesConstructor:
                 for n_par in n.all_input_nodes:
                     if n_par.op != "placeholder" and n_par.name not in self.cnode:
                         deps[n_par] -= 1
+                        if n_par in deps_in_region:
+                            deps_in_region[n_par] -= 1
                 region.nodes.append(n)
 
                 # if the node could free all dependencies in graph
@@ -150,6 +151,7 @@ class OffloadStrategiesConstructor:
                 if _is_sink():
                     region_list.append(region)
                     region = Region(has_param=False, nodes=[])
+                    deps_in_region.clear()
 
                 # propagate common node attr if possible
                 if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
@@ -157,6 +159,7 @@ class OffloadStrategiesConstructor:
                     self.cnode.append(n.name)
                 else:
                     deps[n] = len([user for user in n.users if user.op != "output"])
+                    deps_in_region[n] = deps[n]
         return region_list
 
 
