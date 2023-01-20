@@ -141,7 +141,7 @@ class OffloadStrategiesConstructor:
             has_param = False
             if n.op != "placeholder" and n.op != "output":
                 for n_par in n.all_input_nodes:
-                    if n_par.op != "placeholder":
+                    if n_par.op != "placeholder" and n_par.name not in self.cnode:
                         deps[n_par] -= 1
                 region.nodes.append(n)
 
@@ -152,11 +152,11 @@ class OffloadStrategiesConstructor:
                     region = Region(has_param=False, nodes=[])
 
                 # propagate common node attr if possible
-                # if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
-                #                                   ]) or _is_cop(n.target):
-                #     self.cnode.append(n.name)
-                # else:
-                deps[n] = len([user for user in n.users if user.op != "output"])
+                if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
+                                                  ]) or _is_cop(n.target):
+                    self.cnode.append(n.name)
+                else:
+                    deps[n] = len([user for user in n.users if user.op != "output"])
         return region_list
 
 
