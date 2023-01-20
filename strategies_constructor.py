@@ -83,6 +83,7 @@ class OffloadStrategiesConstructor:
                     inplace = n.kwargs.get("inplace", False)
                 elif n.op == "call_module":
                     inplace = getattr(n.graph.owning_module.get_submodule(n.target), "inplace", False)
+                print(n.op, n.name, inplace)
                 return inplace
 
             return not sum([v for _, v in deps.items()]) and not any(map(_is_inplace, n.users))
