@@ -31,7 +31,7 @@ def partition_graph(model: torch.nn.Module, inps: Dict[str, torch.Tensor]):
     for region in region_list:
         print("*****************************************************")
         for node in region.nodes:
-            print(node.op, "\t", node.name, "\t", node.target, node.target.__name__, "\t", node.args)
+            print(node.op, "\t", node.name, "\t", node.target, "\t", node.args)
 
 
 parser = argparse.ArgumentParser(description="offload testing")
