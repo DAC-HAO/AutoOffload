@@ -5,6 +5,17 @@ from torch.fx import Graph, Node
 
 from offload_strategy import OffloadStrategiesVector
 
+@dataclass
+class Region:
+    has_param: bool = False
+    is_offload: bool = False
+    nodes: List[Node] = None
+    param_indices: List[int] = None
+    param_size: int = 0
+    out_node: Node = None
+    region_to_prefetch = None
+
+
 
 class ModelParameters:
     param_idx = 0
