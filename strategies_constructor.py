@@ -24,6 +24,7 @@ class OffloadStrategiesConstructor:
         self.strategy_map = {}
         self.no_strategy_nodes = []
         self.cnode = cnode
+        self.param_ops = []
 
 
     def _linearize_graph(self) -> List[Region]:
@@ -52,8 +53,6 @@ class OffloadStrategiesConstructor:
         # newly born common node.
         # List of target name that could be seen as common node
         common_ops = ["getattr", "getitem", "size"]
-
-        param_ops = []
 
         def _is_cop(target: Any) -> bool:
             """Check if an op could be seen as common node
@@ -90,8 +89,9 @@ class OffloadStrategiesConstructor:
                     return True
 
             elif n.op == "call_function":
-                return any(map(lambda x: x.name in param_ops, n.all_input_nodes)) and any(
-                    map(lambda x: x.name not in param_ops and not _is_cop(n.target), n.all_input_nodes))
+                return any(map(lambda x: x.name in self.param_ops, n.all_input_nodes)) and any(
+                    map(lambda x: x.name not in self.param_ops and not _is_cop(n.target),
+                        n.all_input_nodes)) and not sum([v for _, v in param_op_deps.items()])
 
             return False
 
@@ -130,6 +130,8 @@ class OffloadStrategiesConstructor:
         node_id = 0
         region_id = 0
 
+        param_op_deps = {}
+
         deps = {}
         region_list = []
         region = Region(r_id=region_id, nodes=[], param_indices=[])
@@ -139,6 +141,8 @@ class OffloadStrategiesConstructor:
                 for n_par in n.all_input_nodes:
                     if n_par.op != "placeholder" and n_par.name not in self.cnode:
                         deps[n_par] -= 1
+                    if n_par.op != "placeholder" and n_par.name in self.param_ops:
+                        param_op_deps[n_par] -= 1
 
                 region.nodes.append(n)
                 self._set_node_and_region_info(node_id, n, region)
@@ -158,64 +162,13 @@ class OffloadStrategiesConstructor:
                     deps[n] = len([user for user in n.users if user.op != "output"])
 
                 # propagate common node attr if possible
-                if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in param_ops
+                if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.param_ops
                                                   ]) or n.op == "get_attr":
-                    param_ops.append(n.name)
+                    self.param_ops.append(n.name)
+                    param_op_deps[n] = len([user for user in n.users if user.op != "output"])
 
         return region_list
 
-
-    def build_strategies_and_cost(self):
-        """
-        This method is to build the strategy vector for each node in the computation graph.
-        """
-
-        def _check_no_strategy_for_node(node: Node):
-            label = False
-            if node.op in ('placeholder', 'get_attr', 'call_method', 'output'):
-                label = True
-
-            elif node.op == "call_module":
-                target = node.target
-                submod = self.root_module.get_submodule(target)
-                if (
-                        len(list(submod.named_parameters(recurse=False))) == 0
-                        and len(list(submod.named_buffers(recurse=False))) == 0
-                ):
-                    label = True
-
-            elif node.op == "call_function":
-                label = True
-                input_nodes = list(node._input_nodes.keys())
-                for inp_node in input_nodes:
-                    if (inp_node.op == "get_attr") or (inp_node in no_offload_param_list):
-                        label = False
-                        break
-
-                if len(input_nodes) == 1:
-                    unique_inp_node = input_nodes[0]
-                    if (unique_inp_node.op == "get_attr") or (unique_inp_node in no_offload_param_list):
-                        label = False
-
-            return label
-
-        node_id = 0
-        no_offload_param_list = []
-        for node in self.nodes:
-            node_id += 1
-            setattr(node, "node_info", NodeInfo(node_id=node_id))
-            strategies_vector = OffloadStrategiesVector(node)
-
-            if _check_no_strategy_for_node(node):
-                self.no_strategy_nodes.append(node)
-                continue
-
-            _set_params_info_for_node(node)
-            generator = StrategyGenerator(node, self.graph)
-            strategies_vector.extend(generator.generate())
-            setattr(node, 'strategies_vector', strategies_vector)
-            self.leaf_strategies.append(strategies_vector)
-            self.strategy_map[node] = strategies_vector
 
     def _set_node_and_region_info(self, node_id: int, cur_n: Node, cur_reg: Region):
 
@@ -244,6 +197,8 @@ class OffloadStrategiesConstructor:
                 ModelParameters.fp16_params.append(attr_itr)
                 ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float().pin_memory())
                 ModelParameters.param_idx += 1
+
+        # get_attr 的参数应该下沉
 
         cur_n.node_info = node_info
         cur_reg.param_size += node_info.param_size
