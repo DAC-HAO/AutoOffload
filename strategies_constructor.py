@@ -6,6 +6,7 @@ from offload_strategy import OffloadStrategiesVector
 from strategy_generator import StrategyGenerator
 from util import ModelParameters, NodeInfo, Region
 
+
 class OffloadStrategiesConstructor:
     """
     OffloadStrategiesConstructor is used to construct the offload plan for the model execution.
@@ -25,7 +26,6 @@ class OffloadStrategiesConstructor:
         self.no_strategy_nodes = []
         self.cnode = cnode
         self.param_ops = []
-
 
     def _linearize_graph(self) -> List[Region]:
         """Linearizing the graph
@@ -79,6 +79,18 @@ class OffloadStrategiesConstructor:
                 bool
             """
 
+            def _is_inplace(n: Node):
+                """Get the inplace argument from ``torch.fx.Node``
+                """
+                inplace = False
+                if n.op == "call_function":
+                    inplace = n.kwargs.get("inplace", False)
+                elif n.op == "call_module":
+                    inplace = getattr(n.graph.owning_module.get_submodule(n.target), "inplace", False)
+                return inplace
+
+            label = False
+
             if n.op == "call_module":
                 target = n.target
                 submod = self.root_module.get_submodule(target)
@@ -86,14 +98,13 @@ class OffloadStrategiesConstructor:
                         len(list(submod.named_parameters(recurse=False))) != 0
                         or len(list(submod.named_buffers(recurse=False))) != 0
                 ):
-                    return True
+                    label = True
 
             elif n.op == "call_function":
-                return any(map(lambda x: x.name in self.param_ops, n.all_input_nodes)) and any(
-                    map(lambda x: x.name not in self.param_ops and not _is_cop(n.target),
-                        n.all_input_nodes)) and not sum([v for _, v in param_op_deps.items()])
+                label = any(map(lambda x: x.name in self.param_ops, n.all_input_nodes)) and any(
+                    map(lambda x: x.name not in self.param_ops and not _is_cop(n.target), n.all_input_nodes))
 
-            return False
+            return label and not sum([v for _, v in param_op_deps.items()]) and not any(map(_is_inplace, n.users))
 
         def _is_sink() -> bool:
             """Check if we can free all dependencies
@@ -113,7 +124,6 @@ class OffloadStrategiesConstructor:
                 return inplace
 
             return not sum([v for _, v in deps.items()]) and not any(map(_is_inplace, n.users))
-
 
         # make sure that item in cnode is valid
         if self.cnode:
@@ -149,6 +159,7 @@ class OffloadStrategiesConstructor:
 
                 # if the node could free all dependencies in graph
                 # we could begin a new node
+                # if _is_sink() or _is_param_comp_op():
                 if _is_param_comp_op():
                     region_list.append(region)
                     region = Region(r_id=region_id, nodes=[], param_indices=[])
@@ -168,7 +179,6 @@ class OffloadStrategiesConstructor:
                     param_op_deps[n] = len([user for user in n.users if user.op != "output"])
 
         return region_list
-
 
     def _set_node_and_region_info(self, node_id: int, cur_n: Node, cur_reg: Region):
 
