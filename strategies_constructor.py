@@ -90,7 +90,8 @@ class OffloadStrategiesConstructor:
                         or len(list(submod.named_buffers(recurse=False))) != 0
                 ):
                     label = True
-            return label
+
+            return label and not sum([v for _, v in param_op_deps.items()])
 
         def _is_param_comp_end() -> bool:
             """Check if an op could be seen as parameter computation end
