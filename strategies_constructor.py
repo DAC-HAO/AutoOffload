@@ -110,7 +110,6 @@ class OffloadStrategiesConstructor:
                     inplace = n.kwargs.get("inplace", False)
                 elif n.op == "call_module":
                     inplace = getattr(n.graph.owning_module.get_submodule(n.target), "inplace", False)
-                print(n.op, n.name, inplace)
                 return inplace
 
             return not sum([v for _, v in deps.items()]) and not any(map(_is_inplace, n.users))
@@ -146,7 +145,7 @@ class OffloadStrategiesConstructor:
 
                 # if the node could free all dependencies in graph
                 # we could begin a new node
-                if _is_sink() or _is_param_comp_op():
+                if _is_sink():
                     region_list.append(region)
                     region = Region(r_id=region_id, nodes=[], param_indices=[])
                     region_id += 1
