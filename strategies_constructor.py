@@ -91,7 +91,7 @@ class OffloadStrategiesConstructor:
 
             elif n.op == "call_function":
                 return any(map(lambda x: x.name in param_ops, n.all_input_nodes)) and any(
-                    map(lambda x: x.name not in param_ops, n.all_input_nodes))
+                    map(lambda x: x.name not in param_ops and not _is_cop(n.target), n.all_input_nodes))
 
             return False
 
