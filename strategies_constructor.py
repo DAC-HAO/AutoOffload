@@ -149,7 +149,7 @@ class OffloadStrategiesConstructor:
 
                 # if the node could free all dependencies in graph
                 # we could begin a new node
-                if _is_sink():
+                if _is_sink() or _is_param_comp_op():
                     region_list.append(region)
                     region = Region(r_id=region_id, nodes=[], param_indices=[])
                     region_id += 1
@@ -197,8 +197,6 @@ class OffloadStrategiesConstructor:
                 ModelParameters.fp16_params.append(attr_itr)
                 ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float().pin_memory())
                 ModelParameters.param_idx += 1
-
-        # get_attr 的参数应该下沉
 
         cur_n.node_info = node_info
         cur_reg.param_size += node_info.param_size
