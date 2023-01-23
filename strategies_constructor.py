@@ -53,6 +53,8 @@ class OffloadStrategiesConstructor:
         # List of target name that could be seen as common node
         common_ops = ["getattr", "getitem", "size"]
 
+        param_ops = []
+
         def _is_cop(target: Any) -> bool:
             """Check if an op could be seen as common node
 
@@ -67,6 +69,31 @@ class OffloadStrategiesConstructor:
                 return target in common_ops
             else:
                 return target.__name__ in common_ops
+
+        def _is_param_comp_op() -> bool:
+            """Check if an op could be seen as compute node contained params
+
+            Args:
+                n (Node): node
+
+            Returns:
+                bool
+            """
+
+            if n.op == "call_module":
+                target = n.target
+                submod = self.root_module.get_submodule(target)
+                if (
+                        len(list(submod.named_parameters(recurse=False))) != 0
+                        or len(list(submod.named_buffers(recurse=False))) != 0
+                ):
+                    return True
+
+            elif n.op == "call_function":
+                return any(map(lambda x: x.name in self.cnode, n.all_input_nodes)) and any(
+                    map(lambda x: x.name not in self.cnode, n.all_input_nodes))
+
+            return False
 
         def _is_sink() -> bool:
             """Check if we can free all dependencies
@@ -83,41 +110,10 @@ class OffloadStrategiesConstructor:
                     inplace = n.kwargs.get("inplace", False)
                 elif n.op == "call_module":
                     inplace = getattr(n.graph.owning_module.get_submodule(n.target), "inplace", False)
+                print(n.op, n.name, inplace)
                 return inplace
-            print(deps_in_region, not sum([v for _, v in deps_in_region.items()]) and deps_in_region.__len__() > 0)
-            return (not sum([v for _, v in deps.items()]) or (
-                not sum([v for _, v in deps_in_region.items()]) and deps_in_region.__len__() > 0)) and not any(
-                map(_is_inplace, n.users))
 
-        def _set_region_info(cur_reg: Region):
-            pass
-
-        def _set_param_info_for_node(cur_n: Node):
-            if cur_n.op in ('placeholder', 'get_attr', 'call_method', 'output'):
-                label = True
-
-            elif cur_n.op == "call_module":
-                target = cur_n.target
-                submod = self.root_module.get_submodule(target)
-                if (
-                        len(list(submod.named_parameters(recurse=False))) == 0
-                        and len(list(submod.named_buffers(recurse=False))) == 0
-                ):
-                    label = True
-
-            elif cur_n.op == "call_function":
-                label = True
-                input_nodes = list(cur_n._input_nodes.keys())
-                for inp_node in input_nodes:
-                    if (inp_node.op == "get_attr"):
-                        label = False
-                        break
-
-                if len(input_nodes) == 1:
-                    unique_inp_node = input_nodes[0]
-                    if (unique_inp_node.op == "get_attr"):
-                        label = False
-
+            return not sum([v for _, v in deps.items()]) and not any(map(_is_inplace, n.users))
 
 
         # make sure that item in cnode is valid
@@ -132,47 +128,36 @@ class OffloadStrategiesConstructor:
         else:
             self.cnode = []
 
+        node_id = 0
+        region_id = 0
+
         deps = {}
-        deps_in_region = {}
         region_list = []
-        region = Region(has_param=False, nodes=[])
+        region = Region(r_id=region_id, nodes=[], param_indices=[])
 
         for n in self.graph.nodes:
-            has_param = False
             if n.op != "placeholder" and n.op != "output":
                 for n_par in n.all_input_nodes:
                     if n_par.op != "placeholder" and n_par.name not in self.cnode:
                         deps[n_par] -= 1
-                        if n_par in deps_in_region:
-                            deps_in_region[n_par] -= 1
+
                 region.nodes.append(n)
+                self._set_node_and_region_info(node_id, n, region)
+
+                # if the node could free all dependencies in graph
+                # we could begin a new node
+                if _is_sink() or _is_param_comp_op():
+                    region_list.append(region)
+                    region = Region(r_id=region_id, nodes=[], param_indices=[])
+                    region_id += 1
 
                 # propagate common node attr if possible
                 if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
                                                   ]) or _is_cop(n.target):
                     self.cnode.append(n.name)
                 else:
-                    deps[n] = 0
-                    deps_in_region[n] = 0
-
-                # if the node could free all dependencies in graph
-                # we could begin a new node
-                if _is_sink():
-                    region_list.append(region)
-                    region = Region(has_param=False, nodes=[])
-                    deps_in_region.clear()
-
-                if deps.get(n, None) is not None and deps_in_region.get(n, None) is not None:
                     deps[n] = len([user for user in n.users if user.op != "output"])
-                    deps_in_region[n] = deps[n]
 
-                # # propagate common node attr if possible
-                # if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
-                #                                   ]) or _is_cop(n.target):
-                #     self.cnode.append(n.name)
-                # else:
-                #     deps[n] = len([user for user in n.users if user.op != "output"])
-                #     deps_in_region[n] = deps[n]
         return region_list
 
 
@@ -210,68 +195,6 @@ class OffloadStrategiesConstructor:
 
             return label
 
-        def _set_params_info_for_node(node: Node):
-            assert node.op in ['call_function', 'call_module']
-
-            assert hasattr(node, "node_info") and isinstance(node.node_info, NodeInfo)
-            node_info = node.node_info
-            node_info.has_param = True
-            if node_info.param_indices is None:
-                node_info.param_indices = []
-
-            if node.op == 'call_module':
-                target = node.target
-                submod = self.root_module.get_submodule(target)
-                for p in list(submod.parameters(recurse=False)):
-
-                    node_info.param_indices.append(ModelParameters.param_idx)
-                    node_info.param_size += p.data.numel() * p.data.element_size()
-                    ModelParameters.fp16_params.append(p)
-                    ModelParameters.fp32_master_params.append(p.detach().clone().float().pin_memory())
-                    ModelParameters.param_idx += 1
-
-            elif node.op == 'call_function':
-                input_nodes = list(node._input_nodes.keys())
-                for inp_node in input_nodes:
-                    if inp_node.op == "get_attr":
-                        attr_itr = self.root_module
-                        atoms = inp_node.target.split(".")
-                        for atom in atoms:
-                            attr_itr = getattr(attr_itr, atom)
-
-                        if isinstance(attr_itr, torch.nn.Parameter):
-                            node_info.param_indices.append(ModelParameters.param_idx)
-                            node_info.param_size += attr_itr.data.numel() * attr_itr.data.element_size()
-                            ModelParameters.fp16_params.append(attr_itr)
-                            ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float())
-                            ModelParameters.param_idx += 1
-
-                if len(input_nodes) == 1:
-                    unique_inp_node = input_nodes[0]
-                    if unique_inp_node.op == "get_attr":
-                        no_offload_param_list.append(node)
-                    elif unique_inp_node in no_offload_param_list:
-                        assert len(node_info.param_indices) == 0
-                        assert node_info.param_size == 0
-                        node_info.param_indices = unique_inp_node.node_info.param_indices.copy()
-                        node_info.param_size += unique_inp_node.node_info.param_size
-                        unique_inp_node.node_info.param_indices.clear()
-                        unique_inp_node.node_info.param_size = 0
-                        unique_inp_node.node_info.has_param = False
-                        no_offload_param_list.remove(unique_inp_node)
-                        no_offload_param_list.append(node)
-                else:
-                    for inp_node in input_nodes:
-                        if inp_node in no_offload_param_list:
-                            assert len(inp_node.node_info.param_indices) > 0
-                            assert inp_node.node_info.param_size > 0
-                            node_info.param_indices.extend(inp_node.node_info.param_indices)
-                            node_info.param_size += inp_node.node_info.param_size
-                            inp_node.node_info.param_indices.clear()
-                            inp_node.node_info.param_size = 0
-                            inp_node.node_info.has_param = False
-                            no_offload_param_list.remove(inp_node)
-
         node_id = 0
         no_offload_param_list = []
         for node in self.nodes:
@@ -289,3 +212,35 @@ class OffloadStrategiesConstructor:
             setattr(node, 'strategies_vector', strategies_vector)
             self.leaf_strategies.append(strategies_vector)
             self.strategy_map[node] = strategies_vector
+
+    def _set_node_and_region_info(self, node_id: int, cur_n: Node, cur_reg: Region):
+
+        node_info = NodeInfo(node_id)
+        node_info.param_indices = []
+
+        if cur_n.op == 'call_module':
+            target = cur_n.target
+            submod = self.root_module.get_submodule(target)
+            for p in list(submod.parameters(recurse=False)):
+                node_info.param_indices.append(ModelParameters.param_idx)
+                node_info.param_size += p.data.numel() * p.data.element_size()
+                ModelParameters.fp16_params.append(p)
+                ModelParameters.fp32_master_params.append(p.detach().clone().float().pin_memory())
+                ModelParameters.param_idx += 1
+
+        elif cur_n.op == "get_attr":
+            attr_itr = self.root_module
+            atoms = cur_n.target.split(".")
+            for atom in atoms:
+                attr_itr = getattr(attr_itr, atom)
+
+            if isinstance(attr_itr, torch.nn.Parameter):
+                node_info.param_indices.append(ModelParameters.param_idx)
+                node_info.param_size += attr_itr.data.numel() * attr_itr.data.element_size()
+                ModelParameters.fp16_params.append(attr_itr)
+                ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float().pin_memory())
+                ModelParameters.param_idx += 1
+
+        cur_n.node_info = node_info
+        cur_reg.param_size += node_info.param_size
+        cur_reg.param_indices.extend(node_info.param_indices)
