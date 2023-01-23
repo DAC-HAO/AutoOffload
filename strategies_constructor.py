@@ -69,8 +69,31 @@ class OffloadStrategiesConstructor:
             else:
                 return target.__name__ in common_ops
 
-        def _is_param_comp_op() -> bool:
-            """Check if an op could be seen as compute node contained params
+        def _is_param_comp_start() -> bool:
+            """Check if an op could be seen as parameter computation start
+
+            Args:
+                n (Node): node
+
+            Returns:
+                bool
+            """
+
+            label = False
+            if n.op == "get_attr":
+                label = True
+            elif n.op == "call_module":
+                target = n.target
+                submod = self.root_module.get_submodule(target)
+                if (
+                        len(list(submod.named_parameters(recurse=False))) != 0
+                        or len(list(submod.named_buffers(recurse=False))) != 0
+                ):
+                    label = True
+            return label
+
+        def _is_param_comp_end() -> bool:
+            """Check if an op could be seen as parameter computation end
 
             Args:
                 n (Node): node
@@ -154,13 +177,18 @@ class OffloadStrategiesConstructor:
                     if n_par.op != "placeholder" and n_par.name in self.param_ops:
                         param_op_deps[n_par] -= 1
 
+                if _is_param_comp_start() and len(region.nodes) != 0:
+                    region_list.append(region)
+                    region = Region(r_id=region_id, nodes=[], param_indices=[])
+                    region_id += 1
+
                 region.nodes.append(n)
                 self._set_node_and_region_info(node_id, n, region)
 
                 # if the node could free all dependencies in graph
                 # we could begin a new node
-                # if _is_sink() or _is_param_comp_op():
-                if _is_param_comp_op():
+                # if _is_sink() or _is_param_comp_end():
+                if _is_param_comp_end():
                     region_list.append(region)
                     region = Region(r_id=region_id, nodes=[], param_indices=[])
                     region_id += 1

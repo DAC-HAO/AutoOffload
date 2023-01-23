@@ -7,16 +7,20 @@ from colossalai.utils.cuda import get_current_device
 from colossalai.fx.profiler import (calculate_fwd_out, calculate_fwd_tmp, calculate_fwd_in, is_compatible_with_meta, parameter_size)
 from strategies_constructor import OffloadStrategiesConstructor
 from offload_strategy import SystemConfig
+from util import Region, NodeInfo
 
 
 class AsynGreedySolver:
 
     def __init__(self,
-                 graph: Graph,
+                 # graph: Graph,
                  # strategies_constructor: OffloadStrategiesConstructor,
+                 region_list: List[Region],
                  memory_budget: float = -1.0):
-        self.graph = graph
-        self.nodes = list(self.graph.nodes)
+        # self.graph = graph
+        # self.nodes = list(self.graph.nodes)
+        self.region_list = region_list
+
         self.memory_budget = memory_budget if memory_budget > 0 \
             else torch.cuda.get_device_properties(get_current_device()).total_memory
         # used to record computation start and end time stamp of each node
@@ -34,19 +38,20 @@ class AsynGreedySolver:
 
     def _init_compute_stream(self):
         compute_timestamp = 0
-        for node in self.graph.nodes:
-            if node.node_info.has_param:
+        for region in self.region_list:
+            for node in region.nodes:
                 # upload parameter
                 compute_timestamp += node.node_info.param_size / SystemConfig.BANDWIDTH
-            self.node_compute_stream.append(
-                [compute_timestamp, compute_timestamp + node.meta.get('fwd_flop', 0) / SystemConfig.COMPUTE_POWER])
-            compute_timestamp += node.meta.get('fwd_flop', 0) / SystemConfig.COMPUTE_POWER
+                self.node_compute_stream.append(
+                    [compute_timestamp, compute_timestamp + node.meta.get('fwd_flop', 0) / SystemConfig.COMPUTE_POWER])
+                compute_timestamp += node.meta.get('fwd_flop', 0) / SystemConfig.COMPUTE_POWER
 
-        for node in self.graph.nodes.__reversed__():
-            self.node_compute_stream.append(
-                [compute_timestamp, compute_timestamp + node.meta.get('bwd_flop', 0) / SystemConfig.COMPUTE_POWER])
-            compute_timestamp += node.meta.get('bwd_flop', 0) / SystemConfig.COMPUTE_POWER
-            if node.node_info.has_param:
+        for region in self.region_list.__reversed__():
+            for node in region.nodes.__reversed__():
+                self.node_compute_stream.append(
+                    [compute_timestamp, compute_timestamp + node.meta.get('bwd_flop', 0) / SystemConfig.COMPUTE_POWER])
+                compute_timestamp += node.meta.get('bwd_flop', 0) / SystemConfig.COMPUTE_POWER
+
                 # offload gradient
                 compute_timestamp += node.node_info.param_size / SystemConfig.BANDWIDTH
 
@@ -54,42 +59,33 @@ class AsynGreedySolver:
     def _call_solver_greedy(self):
         peak_mem_saving, total_mem_saving = self._compute_mem_saving()
         assert peak_mem_saving == 0 and total_mem_saving < 0
-        print("node num", len(self.nodes))
+        print("region num", len(self.region_list))
         print("init peak memory", self.peak_mem/1024**2, "MB")
-        # record corresponding host node which prefetch the node to be offloaded
-        node_to_node_map = {}
-        # record the memory saving from the node to be offloaded
-        node_to_mem_saving_map = {}
+        # record corresponding host region which prefetch the region to be offloaded
+        region_to_region_map = {}
+        # record the memory saving from the region to be offloaded
+        region_to_mem_saving_map = {}
         while self.peak_mem > self.memory_budget:
             node_to_offload = None
             max_offload_profit = (0,)
 
-            # search which node should be offloaded
-            for node in self.nodes:
-                if node.node_info.has_param and (not node.node_info.offload_param_flag):
-                    node_idx = self.nodes.index(node)
+            # search which region should be offloaded
+            for region in self.region_list:
+                if region.param_size > 0 and not region.is_offload:
+
                     max_prefetch_profit = (0,)
 
                     # TODO 当前并未保证 prefetch 遵循 backward 的顺序执行
                     # search when to prefetch the node offloaded
-                    for following_node in self.nodes[node_idx:]:
-                        if following_node.op == "get_attr":
-                            continue
-                        if following_node.node_info.node_to_prefetch is not None:
-                            continue
-                        tmp_peak_mem_saving, tmp_total_mem_saving = self._compute_mem_saving(following_node, node)
-
-                        if tmp_peak_mem_saving <= 0:
-                            # print(node_idx, following_node, tmp_peak_mem_saving)
+                    for host_region in self.region_list[region.r_id:]:
+                        if host_region.region_to_prefetch is not None:
                             continue
 
-                        extra_comm_cost = self._compute_extra_comm_cost(following_node, node)
-                        # tmp_profit = self._compute_offload_profit(tmp_peak_mem_saving, extra_comm_cost)
-                        tmp_profit = self._compute_offload_profit(tmp_total_mem_saving, extra_comm_cost)
+                        profit = self._try_to_offload(host_region, region)
 
                         if self._compare_profit(tmp_profit, max_prefetch_profit):
-                            node_to_node_map[node] = following_node
-                            node_to_mem_saving_map[node] = tmp_peak_mem_saving
+                            region_to_region_map[node] = following_node
+                            region_to_mem_saving_map[node] = tmp_peak_mem_saving
                             max_prefetch_profit = tmp_profit
                             if tmp_profit[0] == float('inf'):
                                 break
@@ -98,21 +94,21 @@ class AsynGreedySolver:
                         node_to_offload = node
                         max_offload_profit = max_prefetch_profit
 
-            if node_to_node_map.get(node_to_offload, None) is not None:
+            if region_to_region_map.get(node_to_offload, None) is not None:
 
-                print('node_to_offload', node_to_offload, node_to_node_map[node_to_offload])
-                if node_to_node_map[node_to_offload] == node_to_offload:
+                print('node_to_offload', node_to_offload, region_to_region_map[node_to_offload])
+                if region_to_region_map[node_to_offload] == node_to_offload:
                     node_to_offload.node_info.syn_upload_flag = True
                 else:
-                    node_to_node_map[node_to_offload].node_info.node_to_prefetch = node_to_offload
+                    region_to_region_map[node_to_offload].node_info.node_to_prefetch = node_to_offload
 
                 node_to_offload.node_info.offload_param_flag = True
-                self.peak_mem -= node_to_mem_saving_map[node_to_offload]
+                self.peak_mem -= region_to_mem_saving_map[node_to_offload]
 
                 assert self.node_to_node_map.get(node_to_offload, None) is None
                 assert self.node_to_mem_saving_map.get(node_to_offload, None) is None
-                self.node_to_node_map[node_to_offload] = node_to_node_map[node_to_offload]
-                self.node_to_mem_saving_map[node_to_offload] = node_to_mem_saving_map[node_to_offload]
+                self.node_to_node_map[node_to_offload] = region_to_region_map[node_to_offload]
+                self.node_to_mem_saving_map[node_to_offload] = region_to_mem_saving_map[node_to_offload]
 
             else:
                 self._repair_strategy()
@@ -120,9 +116,36 @@ class AsynGreedySolver:
             self._update_rumtime_mem_for_node()
             self._update_exec_stream_and_node_info()
 
-            node_to_node_map.clear()
-            node_to_mem_saving_map.clear()
+            region_to_region_map.clear()
+            region_to_mem_saving_map.clear()
 
+
+    def _try_to_offload(self, host_region: Region, offload_region: Region):
+
+        orig_prefetch = host_region.region_to_prefetch
+        orig_is_syn = offload_region.is_syn
+        orig_is_offload = offload_region.is_offload
+
+        if host_region == offload_region:
+            offload_region.is_syn = True
+        else:
+            host_region.region_to_prefetch = offload_region
+        offload_region.is_offload = True
+
+        peak_mem_saving, total_mem_saving = self._compute_mem_saving()
+
+        if peak_mem_saving <= 0:
+            return
+
+        extra_comm_cost = self._compute_extra_comm_cost()
+        # profit = self._compute_offload_profit(peak_mem_saving, extra_comm_cost)
+        profit = self._compute_offload_profit(total_mem_saving, extra_comm_cost)
+
+        host_region.region_to_prefetch = orig_prefetch
+        offload_region.is_syn = orig_is_syn
+        offload_region.is_offload = orig_is_offload
+
+        return profit
 
     def _repair_strategy(self):
         print("repair.........................")
@@ -186,7 +209,7 @@ class AsynGreedySolver:
 
         # forward
         for node in self.graph.nodes:
-            if node.node_info.has_param:
+            if node.node_info.param_size > 0:
                 # upload parameter
                 compute_timestamp += node.node_info.param_size / SystemConfig.BANDWIDTH
 
@@ -221,7 +244,7 @@ class AsynGreedySolver:
                 [compute_timestamp, compute_timestamp + node.meta.get('bwd_flop', 0) / SystemConfig.COMPUTE_POWER])
             compute_timestamp += node.meta.get('bwd_flop', 0) / SystemConfig.COMPUTE_POWER
 
-            if node.node_info.has_param:
+            if node.node_info.param_size > 0:
                 # offload gradient
                 compute_timestamp += node.node_info.param_size / SystemConfig.BANDWIDTH
 
@@ -239,89 +262,85 @@ class AsynGreedySolver:
                 return val1 > val2
         return False
 
-    def _compute_mem_saving(self,
-                            host_node_for_prefetch: Node=None,
-                            node_to_offload: Node=None,
-                            update_flag=False):
+    def _compute_mem_saving(self, update_flag=False):
         cur_peak_mem = 0
         total_mem_saving = 0
         runtime_mem = 0
 
         # forward
-        for node in self.graph.nodes:
-            runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
+        for region in self.region_list:
             # upload parameter
-            runtime_mem += node.node_info.param_size
-            total_mem_saving += max(node.node_info.runtime_fwd_mem - runtime_mem, 0)
+            runtime_mem += region.param_size
 
-            if update_flag:
-                node.node_info.runtime_fwd_mem = runtime_mem
+            for node in region.nodes:
+                runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
+                total_mem_saving += max(node.node_info.runtime_fwd_mem - runtime_mem, 0)
 
-            cur_peak_mem = max(runtime_mem, cur_peak_mem)
-            if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
-                print("cur peak mem too high in forward", node, host_node_for_prefetch, node_to_offload)
-            if node.node_info.offload_param_flag or (node == node_to_offload):
-                runtime_mem -= node.node_info.param_size
+                if update_flag:
+                    node.node_info.runtime_fwd_mem = runtime_mem
+
+                cur_peak_mem = max(runtime_mem, cur_peak_mem)
+                if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
+                    print("cur peak mem too high in forward", node, region.r_id)
+
+            if region.is_offload:
+                runtime_mem -= region.param_size
 
         # backward
         grad_in_computed = {}
-        for node in self.graph.nodes.__reversed__():
-            runtime_mem -= calculate_fwd_out(node)
+        for region in self.region_list.__reversed__():
 
-            if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
-                print("cur peak mem too high in backward", node, host_node_for_prefetch, node_to_offload)
-            # param prefetch
-            node_to_prefetch = node.node_info.node_to_prefetch
-            if node == host_node_for_prefetch:
-                node_to_prefetch = node_to_offload
-            if node_to_prefetch is not None:
+            # parameter prefetch
+            if region.region_to_prefetch is not None:
                 # TODO 如果 prefetch stream 被阻塞，内存是否有可能也被延迟分配
-                runtime_mem += node_to_prefetch.node_info.param_size
-            if node.node_info.syn_upload_flag:
-                # synchronous upload parameter
-                assert node.node_info.offload_param_flag
-                node_to_prefetch = node
-                runtime_mem += node_to_prefetch.node_info.param_size
-            # if node_to_prefetch is not None:
-            #     # TODO 如果 prefetch stream 被阻塞，内存是否有可能也被延迟分配
-            #     runtime_mem += node_to_prefetch.node_info.param_size
+                runtime_mem += region.region_to_prefetch.param_size
+            if region.is_syn:
+                runtime_mem += region.param_size
 
-            runtime_mem = runtime_mem + node.meta['bwd_mem_tmp'] + node.meta['bwd_mem_out']
-            if node.node_info.has_param:
-                # There is no need to add up the parameter size because it may be prefetched or not offloaded.
+            for node in region.nodes.__reversed__():
 
-                # add the gradient of the parameter
-                runtime_mem += node.node_info.param_size
+                runtime_mem -= calculate_fwd_out(node)
 
-                # The memory savings of a node may be negative due to parameter prefetch.
-                total_mem_saving += (node.node_info.runtime_bwd_mem - runtime_mem)
+                if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
+                    print("cur peak mem too high in backward", node, region)
 
-                if update_flag:
-                    node.node_info.runtime_bwd_mem = runtime_mem
+                runtime_mem = runtime_mem + node.meta['bwd_mem_tmp'] + node.meta['bwd_mem_out']
+                if node.node_info.param_size > 0:
+                    # There is no need to add up the parameter size because it may be prefetched or not offloaded.
 
+                    # add the gradient of the parameter
+                    runtime_mem += node.node_info.param_size
+
+                    # The memory savings of a node may be negative due to parameter prefetch.
+                    total_mem_saving += (node.node_info.runtime_bwd_mem - runtime_mem)
+
+                    if update_flag:
+                        node.node_info.runtime_bwd_mem = runtime_mem
+
+                    cur_peak_mem = max(runtime_mem, cur_peak_mem)
+
+                    # release parameter and offload gradient
+                    runtime_mem -= 2 * node.node_info.param_size
                 cur_peak_mem = max(runtime_mem, cur_peak_mem)
+                runtime_mem = runtime_mem - node.meta['bwd_mem_tmp'] - calculate_fwd_tmp(node)
 
-                # release parameter and offload gradient
-                runtime_mem -= 2 * node.node_info.param_size
-            cur_peak_mem = max(runtime_mem, cur_peak_mem)
-            runtime_mem = runtime_mem - node.meta['bwd_mem_tmp'] - calculate_fwd_tmp(node)
+                # TODO 需要考虑有多个user node 的情况，当前只释放了一个bwd_out
+                # release grad_in of current node
+                for grad_in in node.meta["fwd_out"]:
+                    if isinstance(grad_in, torch.Tensor):
+                        runtime_mem -= grad_in.numel() * grad_in.element_size()
 
-            # TODO 需要考虑有多个user node 的情况，当前只释放了一个bwd_out
-            # release grad_in of current node
-            for grad_in in node.meta["fwd_out"]:
-                if isinstance(grad_in, torch.Tensor):
-                    runtime_mem -= grad_in.numel() * grad_in.element_size()
+                for in_node in list(node._input_nodes.keys()):
+                    # # release fwd_in (fwd_out) of current node (input nodes)
+                    # if calculate_fwd_out(in_node) > 0 and (not fwd_out_released[in_node]):
+                    #     runtime_mem -= calculate_fwd_out(in_node)
+                    #     fwd_out_released[in_node] = True
 
-            for in_node in list(node._input_nodes.keys()):
-                # # release fwd_in (fwd_out) of current node (input nodes)
-                # if calculate_fwd_out(in_node) > 0 and (not fwd_out_released[in_node]):
-                #     runtime_mem -= calculate_fwd_out(in_node)
-                #     fwd_out_released[in_node] = True
+                    # map multiple gradients of output to one tensor
+                    if grad_in_computed.get(in_node, False):
+                        runtime_mem -= calculate_fwd_out(in_node)
+                        grad_in_computed[in_node] = True
 
-                # map multiple gradients of output to one tensor
-                if grad_in_computed.get(in_node, False):
-                    runtime_mem -= calculate_fwd_out(in_node)
-                    grad_in_computed[in_node] = True
 
         if (host_node_for_prefetch is None) and (node_to_offload is None):
             if update_flag:
@@ -387,7 +406,7 @@ class AsynGreedySolver:
 
             compute_start_timestamp += node.meta.get('bwd_flop', 0) / SystemConfig.COMPUTE_POWER
 
-            if node.node_info.has_param:
+            if node.node_info.param_size > 0:
                 # offload gradient
                 compute_start_timestamp += node.node_info.param_size / SystemConfig.BANDWIDTH
 

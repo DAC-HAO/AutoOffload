@@ -32,9 +32,9 @@ def memory_optimization(model: torch.nn.Module,
     interp.propagate(*meta_args.values())
 
     offload_strategies_constructor = OffloadStrategiesConstructor(graph)
-    offload_strategies_constructor.build_strategies_and_cost()
+    region_list = offload_strategies_constructor._linearize_graph()
 
-    solver = AsynGreedySolver(gm.graph, memory_budget)
+    solver = AsynGreedySolver(region_list, memory_budget)
     solver._call_solver_greedy()
 
     # print offload node

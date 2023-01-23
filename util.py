@@ -14,7 +14,7 @@ class Region:
     param_size: int = 0
     # out_node: Node = None
     region_to_prefetch = None
-
+    is_syn: bool = False
 
 
 class ModelParameters:
@@ -30,7 +30,6 @@ class GlobalCudaInfo:
 @dataclass
 class NodeInfo:
     node_id: int = 0
-    has_param: bool = False
     param_size: float = 0
     offload_param_flag: bool = False
     param_indices: List = None
