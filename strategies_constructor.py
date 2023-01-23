@@ -90,8 +90,8 @@ class OffloadStrategiesConstructor:
                     return True
 
             elif n.op == "call_function":
-                return any(map(lambda x: x.name in self.cnode, n.all_input_nodes)) and any(
-                    map(lambda x: x.name not in self.cnode, n.all_input_nodes))
+                return any(map(lambda x: x.name in param_ops, n.all_input_nodes)) and any(
+                    map(lambda x: x.name not in param_ops, n.all_input_nodes))
 
             return False
 
@@ -156,6 +156,11 @@ class OffloadStrategiesConstructor:
                     self.cnode.append(n.name)
                 else:
                     deps[n] = len([user for user in n.users if user.op != "output"])
+
+                # propagate common node attr if possible
+                if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in param_ops
+                                                  ]) or n.op == "get_attr":
+                    param_ops.append(n.name)
 
         return region_list
 
