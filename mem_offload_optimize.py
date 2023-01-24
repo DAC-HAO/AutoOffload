@@ -39,11 +39,11 @@ def memory_optimization(model: torch.nn.Module,
 
     # print offload node
     print("****************** offload plan *******************")
-    for node in graph.nodes:
-        if node.node_info.offload_param_flag or (node.node_info.node_to_prefetch is not None):
-            print(node.op, node.name, node.node_info.node_to_prefetch, node.node_info.offload_param_flag)
+    for region in region_list:
+        if region.is_offload or (region.region_to_prefetch is not None):
+            print(region.r_id, region.region_to_prefetch.r_id, region.is_offload)
 
-    gm = runtime_asyn_offload_apply_pass(gm)
+    gm = runtime_asyn_offload_apply_pass(gm, region_list)
 
     gm.recompile()
     # print(gm.code)

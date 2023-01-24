@@ -25,7 +25,7 @@ class OffloadStrategiesConstructor:
         self.strategy_map = {}
         self.no_strategy_nodes = []
         self.cnode = cnode
-        self.param_ops = []
+        self.only_param_ops = []
 
     def _linearize_graph(self) -> List[Region]:
         """Linearizing the graph
@@ -125,8 +125,8 @@ class OffloadStrategiesConstructor:
                     label = True
 
             elif n.op == "call_function":
-                label = any(map(lambda x: x.name in self.param_ops, n.all_input_nodes)) and any(
-                    map(lambda x: x.name not in self.param_ops and not _is_cop(n.target), n.all_input_nodes))
+                label = any(map(lambda x: x.name in self.only_param_ops, n.all_input_nodes)) and any(
+                    map(lambda x: x.name not in self.only_param_ops and not _is_cop(n.target), n.all_input_nodes))
 
             return label and not sum([v for _, v in param_op_deps.items()]) and not any(map(_is_inplace, n.users))
 
@@ -175,7 +175,7 @@ class OffloadStrategiesConstructor:
                 for n_par in n.all_input_nodes:
                     if n_par.op != "placeholder" and n_par.name not in self.cnode:
                         deps[n_par] -= 1
-                    if n_par.op != "placeholder" and n_par.name in self.param_ops:
+                    if n_par.op != "placeholder" and n_par.name in self.only_param_ops:
                         param_op_deps[n_par] -= 1
 
                 if _is_param_comp_start() and len(region.nodes) != 0:
@@ -202,9 +202,9 @@ class OffloadStrategiesConstructor:
                     deps[n] = len([user for user in n.users if user.op != "output"])
 
                 # propagate common node attr if possible
-                if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.param_ops
+                if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.only_param_ops
                                                   ]) or n.op == "get_attr":
-                    self.param_ops.append(n.name)
+                    self.only_param_ops.append(n.name)
                     param_op_deps[n] = len([user for user in n.users if user.op != "output"])
 
         return region_list

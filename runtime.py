@@ -4,7 +4,7 @@ import torch
 from torch.fx.node import Node
 from colossalai.gemini.tensor_utils import alloc_storage, free_storage
 
-from util import ModelParameters, GlobalCudaInfo
+from util import ModelParameters, GlobalCudaInfo, Region
 
 
 class PreForwardUpload(torch.autograd.Function):
@@ -125,7 +125,7 @@ class PostForwardOperation(torch.autograd.Function):
         ctx.prefetch_info = prefetch_info
 
         if offload_info is not None:
-            for param_idx in offload_info['params_indices']:
+            for param_idx in offload_info['param_indices']:
                 free_storage(ModelParameters.fp16_params[param_idx].data)
         return input_
 
@@ -134,13 +134,13 @@ class PostForwardOperation(torch.autograd.Function):
 
         # wait current parameter prefetch
         if ctx.offload_info is not None:
-            prefetch_event = GlobalCudaInfo.prefetch_event_map.get(ctx.offload_info['node_id'], None)
+            prefetch_event = GlobalCudaInfo.prefetch_event_map.get(ctx.offload_info['region_id'], None)
             if prefetch_event is not None:
                 assert isinstance(prefetch_event, torch.cuda.Event)
                 prefetch_event.wait()
                 # torch.cuda.current_stream().wait_event(prefetch_event)
-            elif ctx.offload_info['syn_upload_flag']:
-                for param_idx in ctx.offload_info['params_indices']:
+            elif ctx.offload_info['is_syn']:
+                for param_idx in ctx.offload_info['param_indices']:
                     fp16_param = ModelParameters.fp16_params[param_idx]
                     alloc_storage(fp16_param.data)
                     fp16_param.data.copy_(ModelParameters.fp32_master_params[param_idx].data)
@@ -148,9 +148,9 @@ class PostForwardOperation(torch.autograd.Function):
         # prefetch following node parameter
         if ctx.prefetch_info is not None:
             # prefetch
-            params_indices = ctx.prefetch_info['params_indices']
+            param_indices = ctx.prefetch_info['param_indices']
             with torch.cuda.stream(GlobalCudaInfo.h2d_stream):
-                for param_idx in params_indices:
+                for param_idx in param_indices:
                     fp16_param = ModelParameters.fp16_params[param_idx]
                     alloc_storage(fp16_param.data)
                     fp16_param.data.copy_(ModelParameters.fp32_master_params[param_idx].data, non_blocking=True)
@@ -158,7 +158,7 @@ class PostForwardOperation(torch.autograd.Function):
             # insert event to record H2D stream
             prefetch_event = torch.cuda.Event()
             prefetch_event.record(GlobalCudaInfo.h2d_stream)
-            GlobalCudaInfo.prefetch_event_map[ctx.prefetch_info['node_id']] = prefetch_event
+            GlobalCudaInfo.prefetch_event_map[ctx.prefetch_info['region_id']] = prefetch_event
 
         return grad_output, None, None
 
@@ -224,20 +224,19 @@ def replace_node_users(orig_node: Node, inserted_node: Node, rep_user_nodes: Lis
             user.kwargs = new_kwargs
 
 
-def runtime_asyn_offload_apply_pass(gm: torch.fx.GraphModule):
+def runtime_asyn_offload_apply_pass(gm: torch.fx.GraphModule, region_list: List[Region]):
     """
     This pass is used to add the asynchronous offload spec apply node to the origin graph.
     """
     mod_graph = gm.graph
-    nodes = tuple(mod_graph.nodes)
+    # nodes = tuple(mod_graph.nodes)
     no_insert_after_node_list = []
-    for node in nodes:
 
-        if node.node_info.has_param:
-            param_indices = node.node_info.param_indices
+    for r_idx, region in enumerate(region_list):
+
+        if region.param_size > 0:
+            param_indices = region.param_indices
             assert isinstance(param_indices, list)
-
-            # last_inp_node = list(node._input_nodes.keys())[-1]
 
             def _extract_last_input_node(cur_node):
                 for n in list(cur_node._input_nodes.keys()).__reversed__():
@@ -251,45 +250,27 @@ def runtime_asyn_offload_apply_pass(gm: torch.fx.GraphModule):
                 no_insert_after_node_list.append(cur_node)
                 return _extract_last_input_node(cur_user_nodes[0])
 
-            last_inp_node = _extract_last_input_node(node)
+            last_inp_node = region_list[r_idx-1].nodes[-1]
 
             with mod_graph.inserting_after(last_inp_node):
                 upload_apply_node = mod_graph.create_node('call_function', convert_upload_to_action,
                                                           args=(last_inp_node, param_indices))
-            replace_node_users(last_inp_node, upload_apply_node, [node])
-
-        #     if node.node_info.offload_param_flag:
-        #         syn_upload_flag = node.node_info.syn_upload_flag
-        #         node_id = node.node_info.node_id
-        #         with mod_graph.inserting_after(node):
-        #             offload_apply_node = mod_graph.create_node('call_function', convert_offload_to_action_asyn,
-        #                                                        args=(node, param_indices, syn_upload_flag, node_id))
-        #         replace_node_users(node, offload_apply_node)
-        #
-        # node_to_prefetch = node.node_info.node_to_prefetch
-        # if node_to_prefetch is not None:
-        #     param_indices = node_to_prefetch.node_info.param_indices
-        #     node_id = node_to_prefetch.node_info.node_id
-        #     assert isinstance(param_indices, list)
-        #     with mod_graph.inserting_after(node):
-        #         prefetch_apply_node = mod_graph.create_node('call_function', convert_prefetch_to_action,
-        #                                                     args=(node, param_indices, node_id))
-        #     print(node, node_to_prefetch, node.node_info.offload_param_flag, list(node.users.keys()))
-        #     replace_node_users(node, prefetch_apply_node)
+            replace_node_users(last_inp_node, upload_apply_node)
 
         offload_info = None
         prefetch_info = None
-        if node.node_info.offload_param_flag:
+        if region.is_offload:
             offload_info = {}
-            offload_info['params_indices'] = node.node_info.param_indices
-            offload_info['node_id'] = node.node_info.node_id
-            offload_info['syn_upload_flag'] = node.node_info.syn_upload_flag
-        node_to_prefetch = node.node_info.node_to_prefetch
-        if node_to_prefetch is not None:
+            offload_info['param_indices'] = region.param_indices
+            offload_info['region_id'] = region.r_id
+            offload_info['is_syn'] = region.is_syn
+        region_to_prefetch = region.region_to_prefetch
+        if region_to_prefetch is not None:
             prefetch_info = {}
-            prefetch_info['params_indices'] = node_to_prefetch.node_info.param_indices
-            prefetch_info['node_id'] = node_to_prefetch.node_info.node_id
+            prefetch_info['param_indices'] = region_to_prefetch.param_indices
+            prefetch_info['region_id'] = region_to_prefetch.r_id
         if (offload_info is not None) or (prefetch_info is not None):
+            node = region.nodes[-1]
             with mod_graph.inserting_after(node):
                 new_node = mod_graph.create_node('call_function', convert_offload_prefetch_to_action_asyn,
                                                             args=(node, offload_info, prefetch_info))
