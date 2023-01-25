@@ -247,11 +247,13 @@ class OffloadStrategiesConstructor:
         if cur_n.op == 'call_module':
             target = cur_n.target
             submod = self.root_module.get_submodule(target)
-            for p in list(submod.parameters(recurse=False)):
+            for name, p in submod.named_parameters(recurse=False):
                 node_info.param_indices.append(ModelParameters.param_idx)
                 node_info.param_size += p.data.numel() * p.data.element_size()
                 # if ModelParameters.fp16_params.__contains__(p):
                 #     print(f"exist param: {p.data.numel() * p.data.element_size()/1024**2}")
+                print(name)
+                ModelParameters.param_names.append(name)
                 ModelParameters.fp16_params.append(p)
                 ModelParameters.fp32_master_params.append(p.detach().clone().float().pin_memory())
                 ModelParameters.param_idx += 1

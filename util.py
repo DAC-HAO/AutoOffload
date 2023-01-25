@@ -25,6 +25,7 @@ class ModelParameters:
     fp16_params = []
     fp32_master_params = []
     # param_offload_dict = {}
+    param_names = []
 
 class GlobalCudaInfo:
     h2d_stream = torch.cuda.Stream()
