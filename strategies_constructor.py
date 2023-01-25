@@ -198,17 +198,15 @@ class OffloadStrategiesConstructor:
                     if n_par.op != "placeholder" and n_par.name in self.only_param_ops:
                         param_op_deps[n_par] -= 1
 
-                if len(region.nodes) != 0 and act_n is not None and _maybe_param_comp_start():
+                if region.nodes.__contains__(act_n) and _maybe_param_comp_start():
                     ns = []
-                    # if region.nodes.__contains__(act_n) and act_n != region.nodes[-1]:
-                    if region.nodes.__contains__(act_n):
-                        border_n_idx = region.nodes.index(act_n)
-                        if border_n_idx < len(region.nodes):
-                            ns = region.nodes[border_n_idx+1:]
-                            region.nodes = region.nodes[:border_n_idx+1]
-                        region_list.append(region)
-                        region_id += 1
-                        region = Region(r_id=region_id, nodes=ns, param_indices=[])
+                    border_n_idx = region.nodes.index(act_n)
+                    if border_n_idx < len(region.nodes):
+                        ns = region.nodes[border_n_idx+1:]
+                        region.nodes = region.nodes[:border_n_idx+1]
+                    region_list.append(region)
+                    region_id += 1
+                    region = Region(r_id=region_id, nodes=ns, param_indices=[])
 
                 region.nodes.append(n)
                 self._set_node_and_region_info(node_id, n, region)
