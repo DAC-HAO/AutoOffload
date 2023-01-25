@@ -210,9 +210,11 @@ class OffloadStrategiesConstructor:
                     region_list.append(region)
                     region_id += 1
                     region = Region(r_id=region_id, nodes=ns, param_indices=[])
+                    act_n = None
 
                 region.nodes.append(n)
                 self._set_node_and_region_info(node_id, n, region)
+                node_id += 1
 
                 # if the node could free all dependencies in graph
                 # we could begin a new node
@@ -221,6 +223,7 @@ class OffloadStrategiesConstructor:
                     region_list.append(region)
                     region_id += 1
                     region = Region(r_id=region_id, nodes=[], param_indices=[])
+                    act_n = None
 
                 # propagate common node attr if possible
                 if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
