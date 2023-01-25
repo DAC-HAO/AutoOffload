@@ -224,7 +224,7 @@ class AsynGreedySolver:
 
                 region_to_offload.is_offload = True
 
-                print('region_to_offload', region_to_offload.r_id, region_to_region_map[region_to_offload.r_id])
+                print('region_to_offload', region_to_offload.r_id, region_to_region_map[region_to_offload.r_id].r_id, self.peak_mem/1024**2)
                 if region_to_region_map[region_to_offload.r_id] == region_to_offload:
                     region_to_offload.is_syn = True
                 else:

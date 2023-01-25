@@ -41,7 +41,7 @@ def memory_optimization(model: torch.nn.Module,
     print("****************** offload plan *******************")
     for region in region_list:
         if region.is_offload or (region.region_to_prefetch is not None):
-            print(region.r_id, region.region_to_prefetch.r_id, region.is_offload)
+            print(region.r_id, region.region_to_prefetch, region.is_offload)
 
     gm = runtime_asyn_offload_apply_pass(gm, region_list)
 
