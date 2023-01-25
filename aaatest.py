@@ -38,7 +38,7 @@ class NetWithRepeatedlyComputedLayers(nn.Module):
 
 model = SimpleNet()
 ps = []
-for p in model.parameters(recurse=False):
+for p in model.parameters():
     print(p)
     if p in ps:
         print("exist")
@@ -47,7 +47,7 @@ for p in model.parameters(recurse=False):
 print("*******************************")
 model = NetWithRepeatedlyComputedLayers()
 ps = []
-for p in model.parameters(recurse=False):
+for p in model.parameters():
     print(p)
     if p in ps:
         print("exist")
