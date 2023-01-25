@@ -37,18 +37,16 @@ class NetWithRepeatedlyComputedLayers(nn.Module):
         return x
 
 from typing import List
-# model = SimpleNet()
-# ps :List[nn.Parameter] = []
-# for p in model.parameters():
-#     if p in ps:
-#         print("exist")
-#     ps.append(p)
+model = SimpleNet()
+ps :List[nn.Parameter] = []
+for p in model.parameters():
+    print(type(p))
+    ps.append(p)
 
 print("*******************************")
 model = NetWithRepeatedlyComputedLayers()
 ps :List[nn.Parameter] = []
 for p in model.parameters():
-    if p in ps:
-        print("exist")
+    print(type(p))
     ps.append(p)
 
