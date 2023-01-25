@@ -69,7 +69,25 @@ class OffloadStrategiesConstructor:
             else:
                 return target.__name__ in common_ops
 
-        def _is_param_comp_start() -> bool:
+        def _is_act(data: Any) -> bool:
+            """Check if an op could be seen as parameter computation start
+
+            Args:
+                data (Any): meta_data
+
+            Returns:
+                bool
+            """
+
+            label = False
+            if isinstance(data, torch.Tensor):
+                return True
+            elif isinstance(data, (tuple, list)):
+                for d in data:
+                    label = label or _is_act(d)
+            return label
+
+        def _maybe_param_comp_start() -> bool:
             """Check if an op could be seen as parameter computation start
 
             Args:
@@ -91,7 +109,7 @@ class OffloadStrategiesConstructor:
                 ):
                     label = True
 
-            return label and not sum([v for _, v in param_op_deps.items()]) and not _is_cop(region.nodes[-1].target)
+            return label and not sum([v for _, v in param_op_deps.items()])
 
         def _is_param_comp_end() -> bool:
             """Check if an op could be seen as parameter computation end
@@ -170,6 +188,8 @@ class OffloadStrategiesConstructor:
         region_list = []
         region = Region(r_id=region_id, nodes=[], param_indices=[])
 
+        act_n = None
+
         for n in self.graph.nodes:
             if n.op != "placeholder" and n.op != "output":
                 for n_par in n.all_input_nodes:
@@ -178,9 +198,16 @@ class OffloadStrategiesConstructor:
                     if n_par.op != "placeholder" and n_par.name in self.only_param_ops:
                         param_op_deps[n_par] -= 1
 
-                if len(region.nodes) != 0 and _is_param_comp_start():
+                if len(region.nodes) != 0 and _maybe_param_comp_start():
+
+                    ns = []
+                    if region.nodes.__contains__(act_n) and act_n != region.nodes[-1]:
+                        border_n_idx = region.nodes.index(act_n)
+                        ns = region.nodes[border_n_idx+1:]
+                        region.nodes = region.nodes[:border_n_idx+1]
+
                     region_list.append(region)
-                    region = Region(r_id=region_id, nodes=[], param_indices=[])
+                    region = Region(r_id=region_id, nodes=ns, param_indices=[])
                     region_id += 1
 
                 region.nodes.append(n)
@@ -206,6 +233,10 @@ class OffloadStrategiesConstructor:
                                                   ]) or n.op == "get_attr":
                     self.only_param_ops.append(n.name)
                     param_op_deps[n] = len([user for user in n.users if user.op != "output"])
+
+                # record last activation node
+                if _is_act(n._meta_data):
+                    act_n = n
 
         return region_list
 
