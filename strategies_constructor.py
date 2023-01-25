@@ -229,7 +229,7 @@ class OffloadStrategiesConstructor:
                 else:
                     deps[n] = len([user for user in n.users if user.op != "output"])
 
-                # propagate common node attr if possible
+                # propagate param node attr if possible
                 if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.only_param_ops
                                                   ]) or n.op == "get_attr":
                     self.only_param_ops.append(n.name)

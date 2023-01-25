@@ -22,16 +22,16 @@ class PreForwardUpload(torch.autograd.Function):
         # upload
         ctx.params_indices = params_indices
         for param_idx in params_indices:
-            print("PreForwardUpload", param_idx, ModelParameters.fp16_params[param_idx].data.shape)
+            # print("PreForwardUpload", param_idx, ModelParameters.fp16_params[param_idx].data.shape)
             fp16_param = ModelParameters.fp16_params[param_idx]
-            print(input_.shape, input_.device, fp16_param.data.device)
+            # print(input_.shape, input_.device, fp16_param.data.device)
             if fp16_param.data.device.type == "cpu":
                 fp16_param.data = fp16_param.data.to("cuda")
             else:
                 # print("PreForwardUpload", fp16_param.data.shape)
                 alloc_storage(fp16_param.data)
                 fp16_param.data.copy_(ModelParameters.fp32_master_params[param_idx].data)
-            print(input_.shape, input_.device, fp16_param.data.device)
+            # print(input_.shape, input_.device, fp16_param.data.device)
         return input_
 
     @staticmethod
@@ -41,6 +41,34 @@ class PreForwardUpload(torch.autograd.Function):
         for param_idx in ctx.params_indices:
             fp16_param = ModelParameters.fp16_params[param_idx]
             free_storage(fp16_param.data)
+        return grad_output, None
+
+
+class AftForwardOffloadSyn(torch.autograd.Function):
+    """
+    A customized offload operation which forward is parameter release operation,
+    backward is a parameter upload operation.
+
+    Args:
+        input_: input matrix.
+        params_indices:.
+    """
+
+    @staticmethod
+    def forward(ctx, input_, params_indices):
+        # release
+        ctx.params_indices = params_indices
+        for param_idx in params_indices:
+            free_storage(ModelParameters.fp16_params[param_idx].data)
+        return input_
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        # upload
+        for param_idx in ctx.params_indices:
+            fp16_param = ModelParameters.fp16_params[param_idx]
+            alloc_storage(fp16_param.data)
+            fp16_param.data.copy_(ModelParameters.fp32_master_params[param_idx].data)
         return grad_output, None
 
 
@@ -173,7 +201,14 @@ def convert_upload_to_action(tensor, params_indices):
     '''
     return PreForwardUpload.apply(tensor, params_indices)
 
+def convert_syn_offload_to_action(tensor, params_indices):
+    '''
+    Convert OffloadSpec into runtime action, implement offload operation target tensor.
 
+    Argument:
+        tensor(torch.Tensor): Tensor stored in each device, which could be different in different ranks.
+    '''
+    return AftForwardOffloadSyn.apply(tensor, params_indices)
 
 def convert_prefetch_to_action(tensor, params_indices, node_id):
     '''
@@ -184,7 +219,7 @@ def convert_prefetch_to_action(tensor, params_indices, node_id):
     '''
     return PreBackwardPrefetch.apply(tensor, params_indices, node_id)
 
-def convert_offload_to_action_asyn(tensor, params_indices, syn_upload_flag=False, node_id=0):
+def convert_asyn_offload_to_action(tensor, params_indices, syn_upload_flag=False, node_id=0):
     '''
     Convert OffloadSpec into runtime action, implement offload operation target tensor.
 
@@ -194,7 +229,7 @@ def convert_offload_to_action_asyn(tensor, params_indices, syn_upload_flag=False
     return AftForwardOffloadAsyn.apply(tensor, params_indices, syn_upload_flag, node_id)
 
 
-def convert_offload_prefetch_to_action_asyn(tensor, offload_info=None, prefetch_info=None):
+def convert_asyn_offload_prefetch_to_action(tensor, offload_info=None, prefetch_info=None):
     '''
     Convert OffloadSpec into runtime action, implement offload operation target tensor.
 
@@ -224,6 +259,37 @@ def replace_node_users(orig_node: Node, inserted_node: Node, rep_user_nodes: Lis
             user.kwargs = new_kwargs
 
 
+def runtime_syn_offload_apply_pass(gm: torch.fx.GraphModule, region_list: List[Region]):
+    """
+    This pass is used to add the offload spec apply node to the origin graph.
+    """
+    mod_graph = gm.graph
+    for r_idx, region in enumerate(region_list):
+        assert r_idx == region.r_id
+        if region.param_size > 0:
+            param_indices = region.param_indices
+            assert isinstance(param_indices, list)
+
+            if r_idx == 0:
+                last_inp_node = tuple(mod_graph.nodes)[0]
+            else:
+                last_inp_node = region_list[r_idx-1].nodes[-1]
+
+            # mod_graph.inserting_before(node) maybe invalid
+            with mod_graph.inserting_after(last_inp_node):
+                upload_apply_node = mod_graph.create_node('call_function', convert_upload_to_action,
+                                                          args=(last_inp_node, param_indices))
+            replace_node_users(last_inp_node, upload_apply_node)
+
+            if region.is_offload:
+                node = region.nodes[-1]
+                with mod_graph.inserting_after(node):
+                    offload_apply_node = mod_graph.create_node('call_function', convert_syn_offload_to_action,
+                                                               args=(node, param_indices))
+                replace_node_users(node, offload_apply_node)
+    return gm
+
+
 def runtime_asyn_offload_apply_pass(gm: torch.fx.GraphModule, region_list: List[Region]):
     """
     This pass is used to add the asynchronous offload spec apply node to the origin graph.
@@ -250,7 +316,10 @@ def runtime_asyn_offload_apply_pass(gm: torch.fx.GraphModule, region_list: List[
                 no_insert_after_node_list.append(cur_node)
                 return _extract_last_input_node(cur_user_nodes[0])
 
-            last_inp_node = region_list[r_idx-1].nodes[-1]
+            if r_idx == 0:
+                last_inp_node = tuple(mod_graph.nodes)[0]
+            else:
+                last_inp_node = region_list[r_idx-1].nodes[-1]
 
             with mod_graph.inserting_after(last_inp_node):
                 upload_apply_node = mod_graph.create_node('call_function', convert_upload_to_action,
@@ -272,7 +341,7 @@ def runtime_asyn_offload_apply_pass(gm: torch.fx.GraphModule, region_list: List[
         if (offload_info is not None) or (prefetch_info is not None):
             node = region.nodes[-1]
             with mod_graph.inserting_after(node):
-                new_node = mod_graph.create_node('call_function', convert_offload_prefetch_to_action_asyn,
+                new_node = mod_graph.create_node('call_function', convert_asyn_offload_prefetch_to_action,
                                                             args=(node, offload_info, prefetch_info))
             replace_node_users(node, new_node)
             if (node.op == "get_attr") or (node in no_insert_after_node_list):

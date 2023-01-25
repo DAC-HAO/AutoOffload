@@ -11,15 +11,137 @@ from offload_strategy import SystemConfig
 from util import Region, NodeInfo
 
 
+class SynGreedySolver:
+
+    def __init__(self,
+                 region_list: List[Region],
+                 memory_budget: float = -1.0):
+
+        self.region_list = region_list
+        self.memory_budget = memory_budget if memory_budget > 0 \
+            else torch.cuda.get_device_properties(get_current_device()).total_memory
+        self.peak_mem = -1
+
+    def _call_solver_greedy(self):
+        peak_mem_saving, total_mem_saving = self._compute_mem_saving()
+        assert peak_mem_saving == 0 and total_mem_saving == 0
+        while self.peak_mem > self.memory_budget:
+            offload_region = None
+            max_profit = 0
+            for region in self.region_list:
+                if region.param_size > 0 and not region.is_offload:
+                    region.is_offload = True
+                    tmp_peak_mem_saving, tmp_total_mem_saving = self._compute_mem_saving()
+                    comm_cost = region.param_size / SystemConfig.BANDWIDTH
+                    profit = peak_mem_saving / comm_cost
+                    if profit > max_profit:
+                        offload_region = region
+                        max_profit = profit
+                        peak_mem_saving = tmp_peak_mem_saving
+                    region.is_offload = False
+
+            assert offload_region is not None
+            offload_region.is_offload = True
+            offload_region.is_syn = True
+            self._update_rumtime_mem_for_node()
+            self.peak_mem -= peak_mem_saving
+
+    def _call_solver_l2l(self):
+        for region in self.region_list:
+            region.is_offload = True
+            region.is_syn = True
+
+    def _update_rumtime_mem_for_node(self):
+        self._compute_mem_saving(update_flag=True)
+
+    def _compute_mem_saving(self, update_flag=False):
+        cur_peak_mem = 0
+        total_mem_saving = 0
+        runtime_mem = 0
+
+        # forward
+        for region in self.region_list:
+            # upload parameter
+            runtime_mem += region.param_size
+
+            for node in region.nodes:
+                runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
+                total_mem_saving += max(node.node_info.runtime_fwd_mem - runtime_mem, 0)
+
+                if update_flag:
+                    node.node_info.runtime_fwd_mem = runtime_mem
+
+                cur_peak_mem = max(runtime_mem, cur_peak_mem)
+                if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
+                    print("cur peak mem too high in forward", node, region.r_id)
+
+            if region.is_offload:
+                runtime_mem -= region.param_size
+
+        # backward
+        grad_in_computed = {}
+        for region in self.region_list.__reversed__():
+
+            # upload parameters
+            if region.is_offload:
+                runtime_mem += region.param_size
+
+            # add the gradient of the parameter
+            runtime_mem += region.param_size
+
+            for node in region.nodes.__reversed__():
+
+                runtime_mem -= calculate_fwd_out(node)
+
+                if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
+                    print("cur peak mem too high in backward", node, region)
+
+                runtime_mem = runtime_mem + node.meta['bwd_mem_tmp'] + node.meta['bwd_mem_out']
+
+                # The memory savings of a node may be negative due to parameter prefetch.
+                total_mem_saving += (node.node_info.runtime_bwd_mem - runtime_mem)
+
+                cur_peak_mem = max(runtime_mem, cur_peak_mem)
+
+                if update_flag:
+                    node.node_info.runtime_bwd_mem = runtime_mem
+
+                runtime_mem = runtime_mem - node.meta['bwd_mem_tmp'] - calculate_fwd_tmp(node)
+
+                # TODO 需要考虑有多个user node 的情况，当前只释放了一个bwd_out
+                # release grad_in of current node
+                for grad_in in node.meta["fwd_out"]:
+                    if isinstance(grad_in, torch.Tensor):
+                        runtime_mem -= grad_in.numel() * grad_in.element_size()
+
+                for in_node in list(node._input_nodes.keys()):
+                    # # release fwd_in (fwd_out) of current node (input nodes)
+                    # if calculate_fwd_out(in_node) > 0 and (not fwd_out_released[in_node]):
+                    #     runtime_mem -= calculate_fwd_out(in_node)
+                    #     fwd_out_released[in_node] = True
+
+                    # map multiple gradients of output to one tensor
+                    if grad_in_computed.get(in_node, False):
+                        runtime_mem -= calculate_fwd_out(in_node)
+                        grad_in_computed[in_node] = True
+
+            # release parameter and offload gradient in region
+            runtime_mem -= 2.0 * region.param_size
+
+        if update_flag:
+            assert self.peak_mem == cur_peak_mem
+        if self.peak_mem < 0:
+            self.peak_mem = cur_peak_mem
+        peak_mem_saving = self.peak_mem - cur_peak_mem
+        return peak_mem_saving, total_mem_saving
+
+
 class AsynGreedySolver:
 
     def __init__(self,
-                 # graph: Graph,
-                 # strategies_constructor: OffloadStrategiesConstructor,
                  region_list: List[Region],
                  memory_budget: float = -1.0):
-        # self.graph = graph
-        # self.nodes = list(self.graph.nodes)
+
         self.region_list = region_list
 
         self.memory_budget = memory_budget if memory_budget > 0 \
@@ -350,10 +472,6 @@ class AsynGreedySolver:
         return peak_mem_saving, total_mem_saving
 
     def _compute_extra_comm_cost(self):
-        # 假设所有被 offload 的 node 的 prefetch 都在 backward 期间
-        # 假设 node 的 prefetch 是遵循 backward 的执行顺序的
-        # 假设不会在同一个 node 上挂两个 prefetch operation
-        # forward stream 不会被影响
 
         comp_time_deps = {}
 
