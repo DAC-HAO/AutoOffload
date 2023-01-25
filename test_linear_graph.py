@@ -29,7 +29,7 @@ def partition_graph(model: torch.nn.Module, inps: Dict[str, torch.Tensor]):
     region_list = offload_strategies_constructor._linearize_graph()
 
     for region in region_list:
-        print("*****************************************************")
+        print("*****************************************************", region.r_id)
         for node in region.nodes:
             print(node.op, "\t", node.name, "\t", node.target, "\t", node.args)
 
