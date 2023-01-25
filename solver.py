@@ -72,6 +72,7 @@ class AsynGreedySolver:
 
             # search which region should be offloaded
             for region in self.region_list:
+                assert region.r_id == self.region_list.index(region)
                 if region.param_size > 0 and not region.is_offload:
                     max_prefetch_profit = (0,)
 
@@ -84,8 +85,8 @@ class AsynGreedySolver:
                         profit, tmp_peak_mem_saving, tmp_total_mem_saving = self._try_to_offload(host_region, region)
 
                         if self._compare_profit(profit, max_prefetch_profit):
-                            region_to_region_map[region] = host_region
-                            region_to_mem_saving_map[region] = tmp_peak_mem_saving
+                            region_to_region_map[region.r_id] = host_region
+                            region_to_mem_saving_map[region.r_id] = tmp_peak_mem_saving
                             max_prefetch_profit = profit
                             if profit[0] == float('inf'):
                                 break
@@ -94,22 +95,22 @@ class AsynGreedySolver:
                         region_to_offload = region
                         max_offload_profit = max_prefetch_profit
 
-            if region_to_region_map.get(region_to_offload, None) is not None:
+            if region_to_region_map.get(region_to_offload.r_id, None) is not None:
 
-                assert self.region_to_region_map.get(region_to_offload, None) is None
-                assert self.region_to_mem_saving_map.get(region_to_offload, None) is None
+                assert self.region_to_region_map.get(region_to_offload.r_id, None) is None
+                assert self.region_to_mem_saving_map.get(region_to_offload.r_id, None) is None
 
                 region_to_offload.is_offload = True
 
-                print('region_to_offload', region_to_offload, region_to_region_map[region_to_offload])
-                if region_to_region_map[region_to_offload] == region_to_offload:
+                print('region_to_offload', region_to_offload.r_id, region_to_region_map[region_to_offload.r_id])
+                if region_to_region_map[region_to_offload.r_id] == region_to_offload:
                     region_to_offload.is_syn = True
                 else:
-                    region_to_region_map[region_to_offload].region_to_prefetch = region_to_offload
-                    self.region_to_region_map[region_to_offload] = region_to_region_map[region_to_offload]
+                    region_to_region_map[region_to_offload.r_id].region_to_prefetch = region_to_offload
+                    self.region_to_region_map[region_to_offload.r_id] = region_to_region_map[region_to_offload.r_id]
 
-                self.peak_mem -= region_to_mem_saving_map[region_to_offload]
-                self.region_to_mem_saving_map[region_to_offload] = region_to_mem_saving_map[region_to_offload]
+                self.peak_mem -= region_to_mem_saving_map[region_to_offload.r_id]
+                self.region_to_mem_saving_map[region_to_offload.r_id] = region_to_mem_saving_map[region_to_offload.r_id]
 
             else:
                 self._repair_strategy()
@@ -174,8 +175,8 @@ class AsynGreedySolver:
             undo_host_region = None
             undo_offload_region = None
 
-            for offload_region, host_region in self.region_to_region_map.items():
-
+            for offload_region_id, host_region in self.region_to_region_map.items():
+                offload_region = self.region_list[offload_region_id]
                 assert host_region.region_to_prefetch == offload_region
                 assert offload_region.is_offload
                 assert not offload_region.is_syn
@@ -194,8 +195,8 @@ class AsynGreedySolver:
             undo_host_region.region_to_prefetch = None
 
             self.peak_mem -= peak_mem_saving
-            self.region_to_region_map.pop(undo_offload_region)
-            self.region_to_mem_saving_map[undo_offload_region] += peak_mem_saving
+            self.region_to_region_map.pop(undo_offload_region.r_id)
+            self.region_to_mem_saving_map[undo_offload_region.r_id] += peak_mem_saving
 
     def _update_rumtime_mem_for_node(self):
         self._compute_mem_saving(update_flag=True)

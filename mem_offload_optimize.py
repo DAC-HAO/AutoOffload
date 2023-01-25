@@ -25,7 +25,7 @@ def memory_optimization(model: torch.nn.Module,
     wrap_fn = lambda x: x.to("meta") if isinstance(x, torch.Tensor) else x
     meta_args = tree_map(wrap_fn, inps)
     graph = tracer.trace(model, meta_args=meta_args)
-    graph.print_tabular()
+    # graph.print_tabular()
     gm = GraphModule(model, graph, model.__class__.__name__)
 
     interp = MetaInfoProp(gm)
