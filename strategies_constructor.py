@@ -250,6 +250,8 @@ class OffloadStrategiesConstructor:
             for p in list(submod.parameters(recurse=False)):
                 node_info.param_indices.append(ModelParameters.param_idx)
                 node_info.param_size += p.data.numel() * p.data.element_size()
+                if ModelParameters.fp16_params.__contains__(p):
+                    print(f"exist param: {p.data.numel() * p.data.element_size()/1024**2}")
                 ModelParameters.fp16_params.append(p)
                 ModelParameters.fp32_master_params.append(p.detach().clone().float().pin_memory())
                 ModelParameters.param_idx += 1
@@ -263,6 +265,8 @@ class OffloadStrategiesConstructor:
             if isinstance(attr_itr, torch.nn.Parameter):
                 node_info.param_indices.append(ModelParameters.param_idx)
                 node_info.param_size += attr_itr.data.numel() * attr_itr.data.element_size()
+                if ModelParameters.fp16_params.__contains__(attr_itr):
+                    print(f"exist param: {attr_itr.data.numel() * attr_itr.data.element_size()/1024**2}")
                 ModelParameters.fp16_params.append(attr_itr)
                 ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float().pin_memory())
                 ModelParameters.param_idx += 1
