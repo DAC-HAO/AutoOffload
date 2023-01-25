@@ -350,7 +350,7 @@ class AsynGreedySolver:
                 prefetch_timestamp = max(prefetch_timestamp, compute_timestamp)
                 start_pref = prefetch_timestamp
                 prefetch_timestamp += region.param_size / SystemConfig.BANDWIDTH
-                comp_time_deps[region] = prefetch_timestamp
+                comp_time_deps[region.r_id] = prefetch_timestamp
                 self.region_prefetch_stream.append([start_pref, prefetch_timestamp])
 
             # prefetch parameter, which is parallel to computation
@@ -358,13 +358,13 @@ class AsynGreedySolver:
                 prefetch_timestamp = max(prefetch_timestamp, compute_timestamp)
                 start_pref = prefetch_timestamp
                 prefetch_timestamp += region.region_to_prefetch.param_size / SystemConfig.BANDWIDTH
-                comp_time_deps[region.region_to_prefetch] = prefetch_timestamp
+                comp_time_deps[region.region_to_prefetch.r_id] = prefetch_timestamp
                 self.region_prefetch_stream.append([start_pref, prefetch_timestamp])
 
             # waiting parameter is usable
             if region.is_offload:
-                assert comp_time_deps.get(region, 0) != 0
-                compute_timestamp = max(comp_time_deps[region], compute_timestamp)
+                assert comp_time_deps.get(region.r_id, 0) != 0
+                compute_timestamp = max(comp_time_deps[region.r_id], compute_timestamp)
 
             start_comp = compute_timestamp
             for node in region.nodes.__reversed__():
@@ -483,18 +483,18 @@ class AsynGreedySolver:
                 assert region.is_offload
                 prefetch_timestamp = max(prefetch_timestamp, compute_timestamp)
                 prefetch_timestamp += region.param_size / SystemConfig.BANDWIDTH
-                comp_time_deps[region] = prefetch_timestamp
+                comp_time_deps[region.r_id] = prefetch_timestamp
 
             # prefetch parameter, which is parallel to computation
             if region.region_to_prefetch is not None:
                 prefetch_timestamp = max(prefetch_timestamp, compute_timestamp)
                 prefetch_timestamp += region.region_to_prefetch.param_size / SystemConfig.BANDWIDTH
-                comp_time_deps[region.region_to_prefetch] = prefetch_timestamp
+                comp_time_deps[region.region_to_prefetch.r_id] = prefetch_timestamp
 
             # waiting parameter is usable
             if region.is_offload:
-                assert comp_time_deps.get(region, 0) != 0
-                compute_timestamp = max(comp_time_deps[region], compute_timestamp)
+                assert comp_time_deps.get(region.r_id, 0) != 0
+                compute_timestamp = max(comp_time_deps[region.r_id], compute_timestamp)
 
             for node in region.nodes.__reversed__():
                 compute_timestamp += node.meta.get('bwd_flop', 0) / SystemConfig.COMPUTE_POWER
