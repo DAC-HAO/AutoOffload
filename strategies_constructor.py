@@ -198,7 +198,7 @@ class OffloadStrategiesConstructor:
                     if n_par.op != "placeholder" and n_par.name in self.only_param_ops:
                         param_op_deps[n_par] -= 1
 
-                if region.nodes.__contains__(act_n) and _maybe_param_comp_start():
+                if act_n in region.nodes and _maybe_param_comp_start():
                     ns = []
                     border_n_idx = region.nodes.index(act_n)
                     if border_n_idx < len(region.nodes):
