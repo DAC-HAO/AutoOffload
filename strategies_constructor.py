@@ -208,8 +208,8 @@ class OffloadStrategiesConstructor:
                         region.nodes = region.nodes[:border_n_idx+1]
 
                     region_list.append(region)
-                    region = Region(r_id=region_id, nodes=ns, param_indices=[])
                     region_id += 1
+                    region = Region(r_id=region_id, nodes=ns, param_indices=[])
 
                 region.nodes.append(n)
                 self._set_node_and_region_info(node_id, n, region)
@@ -219,8 +219,8 @@ class OffloadStrategiesConstructor:
                 # if _is_sink() or _is_param_comp_end():
                 if _is_param_comp_end():
                     region_list.append(region)
-                    region = Region(r_id=region_id, nodes=[], param_indices=[])
                     region_id += 1
+                    region = Region(r_id=region_id, nodes=[], param_indices=[])
 
                 # propagate common node attr if possible
                 if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
