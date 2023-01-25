@@ -91,7 +91,7 @@ class OffloadStrategiesConstructor:
                 ):
                     label = True
 
-            return label and not sum([v for _, v in param_op_deps.items()])
+            return label and not sum([v for _, v in param_op_deps.items()]) and not _is_cop(region.nodes[-1].target)
 
         def _is_param_comp_end() -> bool:
             """Check if an op could be seen as parameter computation end
