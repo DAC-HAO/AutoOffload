@@ -1,11 +1,50 @@
 
-a = [1,2,3,4,5]
+import torch
+import torch.nn as nn
 
-for v in a.__reversed__():
-    print(v)
+class SimpleNet(nn.Module):
 
-print(a)
+    def __init__(self) -> None:
+        super().__init__()
+        self.embed = nn.Embedding(2048, 1024)
+        self.proj1 = nn.Linear(1024, 1024)
+        self.ln1 = nn.LayerNorm(1024)
+        self.proj2 = nn.Linear(1024, 2048)
+        self.ln2 = nn.LayerNorm(2048)
+        self.classifier = nn.Linear(2048, 2048)
 
-d = {0:3, 1:2}
-d.pop(0)
-print(d)
+    def forward(self, x):
+        x = self.embed(x)
+        x = self.proj1(x)
+        x = self.ln1(x)
+        x = self.proj2(x)
+        x = self.ln2(x)
+        x = self.classifier(x)
+        return x
+
+class NetWithRepeatedlyComputedLayers(nn.Module):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(1024, 1024)
+        self.fc2 = nn.Linear(1024, 1024)
+        self.fc3 = nn.Linear(1024, 512)
+        self.layers = [self.fc1, self.fc2, self.fc1, self.fc2, self.fc3]
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+model = SimpleNet()
+ps = []
+for p in model.parameters(recurse=False):
+    print(ps.__contains__(p))
+    ps.append(p)
+
+print("*******************************")
+model = NetWithRepeatedlyComputedLayers()
+ps = []
+for p in model.parameters(recurse=False):
+    print(ps.__contains__(p))
+    ps.append(p)
