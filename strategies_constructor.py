@@ -178,7 +178,7 @@ class OffloadStrategiesConstructor:
                     if n_par.op != "placeholder" and n_par.name in self.only_param_ops:
                         param_op_deps[n_par] -= 1
 
-                if _is_param_comp_start() and len(region.nodes) != 0:
+                if len(region.nodes) != 0 and _is_param_comp_start():
                     region_list.append(region)
                     region = Region(r_id=region_id, nodes=[], param_indices=[])
                     region_id += 1
