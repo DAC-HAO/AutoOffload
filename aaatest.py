@@ -40,15 +40,13 @@ from typing import List
 model = SimpleNet()
 ps :List[nn.parameter.Parameter] = []
 for p in model.parameters():
-    print(type(p))
-    print(p in ps)
-    ps.append(p)
+    print(p.data in ps)
+    ps.append(p.data)
 
 print("*******************************")
 model = NetWithRepeatedlyComputedLayers()
 ps :List[nn.parameter.Parameter] = []
 for p in model.parameters():
-    print(type(p))
-    print(p in ps)
-    ps.append(p)
+    print(p.data in ps)
+    ps.append(p.data)
 
