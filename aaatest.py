@@ -36,8 +36,9 @@ class NetWithRepeatedlyComputedLayers(nn.Module):
             x = layer(x)
         return x
 
+from typing import List
 model = SimpleNet()
-ps = []
+ps :List[nn.Parameter] = []
 for p in model.parameters():
     if p in ps:
         print("exist")
@@ -45,7 +46,7 @@ for p in model.parameters():
 
 print("*******************************")
 model = NetWithRepeatedlyComputedLayers()
-ps = []
+ps :List[nn.Parameter] = []
 for p in model.parameters():
     if p in ps:
         print("exist")
