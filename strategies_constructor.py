@@ -200,9 +200,9 @@ class OffloadStrategiesConstructor:
 
                 if len(region.nodes) != 0 and act_n is not None and _maybe_param_comp_start():
 
-                    assert region.nodes.__contains__(act_n)
+                    # assert region.nodes.__contains__(act_n)
                     ns = []
-                    if act_n != region.nodes[-1]:
+                    if region.nodes.__contains__(act_n) and act_n != region.nodes[-1]:
                         border_n_idx = region.nodes.index(act_n)
                         ns = region.nodes[border_n_idx+1:]
                         region.nodes = region.nodes[:border_n_idx+1]
@@ -210,7 +210,6 @@ class OffloadStrategiesConstructor:
                     region_list.append(region)
                     region_id += 1
                     region = Region(r_id=region_id, nodes=ns, param_indices=[])
-                    act_n = None
 
                 region.nodes.append(n)
                 self._set_node_and_region_info(node_id, n, region)
@@ -223,7 +222,6 @@ class OffloadStrategiesConstructor:
                     region_list.append(region)
                     region_id += 1
                     region = Region(r_id=region_id, nodes=[], param_indices=[])
-                    act_n = None
 
                 # propagate common node attr if possible
                 if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
