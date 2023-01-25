@@ -35,6 +35,11 @@ def memory_optimization(model: torch.nn.Module,
     offload_strategies_constructor = OffloadStrategiesConstructor(graph)
     region_list = offload_strategies_constructor._linearize_graph()
 
+    act_peak_mem = compute_act_peak_mem(region_list) / 1024 ** 2
+    max_param_mem = compute_max_param_mem(region_list) / 1024 ** 2
+    total_param_mem = compute_total_param_mem(region_list) / 1024 ** 2
+    print(f"act_peak_mem={act_peak_mem} MB | max_param_mem={max_param_mem} MB | total_param_mem={total_param_mem}")
+
     solver = AsynGreedySolver(region_list, memory_budget)
     solver._call_solver_greedy()
 
@@ -43,11 +48,6 @@ def memory_optimization(model: torch.nn.Module,
     for region in region_list:
         if region.is_offload or (region.region_to_prefetch is not None):
             print(region.r_id, region.region_to_prefetch, region.is_offload)
-
-    act_peak_mem = compute_act_peak_mem(region_list)/1024**2
-    max_param_mem = compute_max_param_mem(region_list)/1024**2
-    total_param_mem = compute_total_param_mem(region_list)/1024**2
-    print(f"act_peak_mem={act_peak_mem} MB | max_param_mem={max_param_mem} MB | total_param_mem={total_param_mem}")
 
     gm = runtime_asyn_offload_apply_pass(gm, region_list)
 
