@@ -452,6 +452,7 @@ class AsynGreedySolver:
                 print(region.r_id, runtime_mem/1024**2)
             else:
                 runtime_mem += region.param_size
+                print(region.r_id, runtime_mem / 1024 ** 2, region.region_shared_param)
 
             for node in region.nodes.__reversed__():
 
