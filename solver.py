@@ -221,6 +221,8 @@ class AsynGreedySolver:
                             continue
 
                         profit, tmp_peak_mem_saving, tmp_total_mem_saving = self._try_to_offload(host_region, region)
+                        if tmp_peak_mem_saving == 0:
+                            continue
 
                         if self._compare_profit(profit, max_prefetch_profit):
                             region_to_region_map[region.r_id] = host_region
@@ -264,8 +266,8 @@ class AsynGreedySolver:
         peak_mem_saving, total_mem_saving = self._compute_mem_saving()
         assert peak_mem_saving >= 0
         extra_comm_cost = self._compute_extra_comm_cost()
-        # profit = self._compute_offload_profit(peak_mem_saving, extra_comm_cost)
-        profit = self._compute_offload_profit(total_mem_saving, extra_comm_cost)
+        profit = self._compute_offload_profit(peak_mem_saving, extra_comm_cost)
+        # profit = self._compute_offload_profit(total_mem_saving, extra_comm_cost)
         return profit, peak_mem_saving, total_mem_saving
 
     def _try_to_offload(self, host_region: Region, offload_region: Region):
@@ -323,6 +325,8 @@ class AsynGreedySolver:
 
                 profit, tmp_peak_mem_saving, tmp_total_mem_saving = self._try_convert_to_syn_prefetch(host_region,
                                                                                                       offload_region)
+                if tmp_peak_mem_saving == 0:
+                    continue
 
                 if self._compare_profit(profit, max_profit):
                     undo_host_region = host_region
@@ -449,7 +453,6 @@ class AsynGreedySolver:
             # add the gradient of the parameter
             if region.region_shared_param is not None and region.r_id < region.region_shared_param.r_id:
                 runtime_mem += 2.0 * region.param_size
-                print(region.r_id, runtime_mem/1024**2)
             else:
                 runtime_mem += region.param_size
 
