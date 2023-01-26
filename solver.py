@@ -256,7 +256,9 @@ class AsynGreedySolver:
             elif self.region_to_region_map.__len__() > 0 and self._repair_strategy():
                 pass
             else:
-                raise RuntimeError(f"can't find the offload strategy met the memory budget {self.memory_budget/1024**2} MB!")
+                raise RuntimeError(
+                    f"can't find the offload strategy met the memory budget {self.memory_budget / 1024 ** 2} MB, "
+                    f"it needs {self.peak_mem / 1024 ** 2} at least!")
 
             self._update_rumtime_mem_for_node()
             self._update_exec_stream_and_node_info()
