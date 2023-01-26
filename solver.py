@@ -449,6 +449,7 @@ class AsynGreedySolver:
             # add the gradient of the parameter
             if region.region_shared_param is not None and region.r_id < region.region_shared_param.r_id:
                 runtime_mem += 2.0 * region.param_size
+                print(region.r_id, runtime_mem/1024**2)
             else:
                 runtime_mem += region.param_size
 
