@@ -94,7 +94,7 @@ def compute_max_param_mem(region_list: List[Region]) -> float:
 
 
 def compute_total_param_mem(region_list: List[Region]) -> float:
-    return sum(region.param_size for region in region_list)
+    return sum(region.param_size for region in region_list if requires_upload_p_in_fwd(region))
 
 
 def requires_upload_p_in_fwd(region: Region):
