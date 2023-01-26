@@ -42,7 +42,8 @@ ps = {}
 for p in model.parameters():
     print(ps.get(p, None) is None)
     ps[p] = 1
-
+p = model.proj2.weight
+print(ps.get(p, None) is None)
 
 
 print("*******************************")
@@ -51,4 +52,5 @@ ps = {}
 for p in model.parameters():
     print(ps.get(p, None) is None)
     ps[p] = 1
-
+p = model.fc3.weight
+print(ps.get(p, None) is None)
