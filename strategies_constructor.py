@@ -253,6 +253,7 @@ class OffloadStrategiesConstructor:
                 node_info.param_size += p.data.numel() * p.data.element_size()
                 if p in self.unique_params:
                     print(f"region {cur_reg.r_id} param existed! {p.data.numel() * p.data.element_size()/1024**2}")
+                    print(p.requires_grad)
                 else:
                     self.unique_params.add(p)
                     ModelParameters.fp16_params.append(p)
@@ -270,6 +271,7 @@ class OffloadStrategiesConstructor:
                 node_info.param_size += attr_itr.data.numel() * attr_itr.data.element_size()
                 if attr_itr in self.unique_params:
                     print(f"region {cur_reg.r_id} param existed! {attr_itr.data.numel() * attr_itr.data.element_size() / 1024 ** 2}")
+                    print(attr_itr.requires_grad)
                 else:
                     self.unique_params.add(attr_itr)
                     ModelParameters.fp16_params.append(attr_itr)
