@@ -38,19 +38,20 @@ class NetWithRepeatedlyComputedLayers(nn.Module):
 
 from typing import List
 model = SimpleNet()
-ps = {}
+ps = set()
 for p in model.parameters():
-    print(ps.get(p, None) is None)
-    ps[p] = 1
+    # print(ps.get(p, None) is None)
+    # ps[p] = 1
+    ps.add(p)
 p = model.proj2.weight
-print(ps.get(p, None) is None)
+# print(ps.get(p, None) is None)
+print(p in ps)
 
-
-print("*******************************")
-model = NetWithRepeatedlyComputedLayers()
-ps = {}
-for p in model.parameters():
-    print(ps.get(p, None) is None)
-    ps[p] = 1
-p = model.fc3.weight
-print(ps.get(p, None) is None)
+# print("*******************************")
+# model = NetWithRepeatedlyComputedLayers()
+# ps = {}
+# for p in model.parameters():
+#     print(ps.get(p, None) is None)
+#     ps[p] = 1
+# p = model.fc3.weight
+# print(ps.get(p, None) is None)
