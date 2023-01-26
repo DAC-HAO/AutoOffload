@@ -26,7 +26,7 @@ class OffloadStrategiesConstructor:
         self.no_strategy_nodes = []
         self.cnode = cnode
         self.only_param_ops = []
-        self.unique_params = set()
+        self.param_to_region_map = {}
 
     def _linearize_graph(self) -> List[Region]:
         """Linearizing the graph
@@ -203,8 +203,8 @@ class OffloadStrategiesConstructor:
                     ns = []
                     border_n_idx = region.nodes.index(act_n)
                     if border_n_idx < len(region.nodes):
-                        ns = region.nodes[border_n_idx+1:]
-                        region.nodes = region.nodes[:border_n_idx+1]
+                        ns = region.nodes[border_n_idx + 1:]
+                        region.nodes = region.nodes[:border_n_idx + 1]
                     region_list.append(region)
                     region_id += 1
                     region = Region(r_id=region_id, nodes=ns, param_indices=[])
@@ -249,16 +249,18 @@ class OffloadStrategiesConstructor:
             target = cur_n.target
             submod = self.root_module.get_submodule(target)
             for p in list(submod.parameters(recurse=False)):
+
+                if p in self.param_to_region_map:
+                    print(f"region {cur_reg.r_id} param existed! {p.data.numel() * p.data.element_size() / 1024 ** 2}")
+                    cur_reg.region_shared_param = self.param_to_region_map[p]
+                else:
+                    self.param_to_region_map[p] = cur_reg
+
                 node_info.param_indices.append(ModelParameters.param_idx)
                 node_info.param_size += p.data.numel() * p.data.element_size()
-                if p in self.unique_params:
-                    print(f"region {cur_reg.r_id} param existed! {p.data.numel() * p.data.element_size()/1024**2}")
-                    print(p.requires_grad)
-                else:
-                    self.unique_params.add(p)
-                    ModelParameters.fp16_params.append(p)
-                    ModelParameters.fp32_master_params.append(p.detach().clone().float().pin_memory())
-                    ModelParameters.param_idx += 1
+                ModelParameters.fp16_params.append(p)
+                ModelParameters.fp32_master_params.append(p.detach().clone().float().pin_memory())
+                ModelParameters.param_idx += 1
 
         elif cur_n.op == "get_attr":
             attr_itr = self.root_module
@@ -267,16 +269,20 @@ class OffloadStrategiesConstructor:
                 attr_itr = getattr(attr_itr, atom)
 
             if isinstance(attr_itr, torch.nn.Parameter):
+
+                if attr_itr in self.param_to_region_map:
+                    print(
+                        f"region {cur_reg.r_id} param existed! {attr_itr.data.numel() * attr_itr.data.element_size() / 1024 ** 2}")
+                    cur_reg.region_shared_param = self.param_to_region_map[attr_itr]
+                    self.param_to_region_map[attr_itr].region_shared_param = cur_reg
+                else:
+                    self.param_to_region_map[attr_itr] = cur_reg
+
                 node_info.param_indices.append(ModelParameters.param_idx)
                 node_info.param_size += attr_itr.data.numel() * attr_itr.data.element_size()
-                if attr_itr in self.unique_params:
-                    print(f"region {cur_reg.r_id} param existed! {attr_itr.data.numel() * attr_itr.data.element_size() / 1024 ** 2}")
-                    print(attr_itr.requires_grad)
-                else:
-                    self.unique_params.add(attr_itr)
-                    ModelParameters.fp16_params.append(attr_itr)
-                    ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float().pin_memory())
-                    ModelParameters.param_idx += 1
+                ModelParameters.fp16_params.append(attr_itr)
+                ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float().pin_memory())
+                ModelParameters.param_idx += 1
 
         cur_n.node_info = node_info
         cur_reg.param_size += node_info.param_size

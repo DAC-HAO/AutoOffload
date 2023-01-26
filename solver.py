@@ -28,11 +28,13 @@ class SynGreedySolver:
         while self.peak_mem > self.memory_budget:
             offload_region = None
             max_profit = 0
-            for region in self.region_list:
+            for region in self.region_list[:-1]:
                 if region.param_size > 0 and not region.is_offload:
                     region.is_offload = True
                     tmp_peak_mem_saving, tmp_total_mem_saving = self._compute_mem_saving()
                     comm_cost = region.param_size / SystemConfig.BANDWIDTH
+                    if region.region_shared_param is not None and region.r_id < region.region_shared_param.r_id:
+                        comm_cost *= 2.0
                     profit = peak_mem_saving / comm_cost
                     if profit > max_profit:
                         offload_region = region
@@ -47,7 +49,7 @@ class SynGreedySolver:
             self.peak_mem -= peak_mem_saving
 
     def _call_solver_l2l(self):
-        for region in self.region_list:
+        for region in self.region_list[:-1]:
             region.is_offload = True
             region.is_syn = True
 
@@ -62,7 +64,9 @@ class SynGreedySolver:
         # forward
         for region in self.region_list:
             # upload parameter
-            runtime_mem += region.param_size
+            if region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
+                    region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload):
+                runtime_mem += region.param_size
 
             for node in region.nodes:
                 runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
@@ -87,7 +91,10 @@ class SynGreedySolver:
                 runtime_mem += region.param_size
 
             # add the gradient of the parameter
-            runtime_mem += region.param_size
+            if region.region_shared_param is not None and region.r_id < region.region_shared_param.r_id:
+                runtime_mem += 2.0 * region.param_size
+            else:
+                runtime_mem += region.param_size
 
             for node in region.nodes.__reversed__():
 
@@ -126,7 +133,12 @@ class SynGreedySolver:
                         grad_in_computed[in_node] = True
 
             # release parameter and offload gradient in region
-            runtime_mem -= 2.0 * region.param_size
+            if region.region_shared_param is None:
+                runtime_mem -= 2.0 * region.param_size
+            elif region.r_id < region.region_shared_param.r_id:
+                runtime_mem -= 3.0 * region.param_size
+            elif region.region_shared_param.is_offload:
+                runtime_mem -= region.param_size
 
         if update_flag:
             assert self.peak_mem == cur_peak_mem
@@ -161,15 +173,18 @@ class AsynGreedySolver:
 
     def _init_compute_stream(self):
         compute_timestamp = 0
+        # forward
         for region in self.region_list:
             # upload parameter
-            compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
+            if region.region_shared_param is None or region.r_id < region.region_shared_param.r_id:
+                compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
 
             start_comp = compute_timestamp
             for node in region.nodes:
                 compute_timestamp += node.meta.get('fwd_flop', 0) / SystemConfig.COMPUTE_POWER
             self.region_compute_stream.append([start_comp, compute_timestamp])
 
+        # backward
         for region in self.region_list.__reversed__():
             start_comp = compute_timestamp
             for node in region.nodes.__reversed__():
@@ -177,7 +192,8 @@ class AsynGreedySolver:
             self.region_compute_stream.append([start_comp, compute_timestamp])
 
             # offload gradient
-            compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
+            if region.region_shared_param is None or region.r_id < region.region_shared_param.r_id:
+                compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
 
     def _call_solver_greedy(self):
         peak_mem_saving, total_mem_saving = self._compute_mem_saving()
@@ -192,8 +208,8 @@ class AsynGreedySolver:
             region_to_offload = None
             max_offload_profit = (0,)
 
-            # search which region should be offloaded
-            for region in self.region_list:
+            # search which region should be offloaded, last region is not offloaded
+            for region in self.region_list[:-1]:
                 assert region.r_id == self.region_list.index(region)
                 if region.param_size > 0 and not region.is_offload:
                     max_prefetch_profit = (0,)
@@ -224,7 +240,8 @@ class AsynGreedySolver:
 
                 region_to_offload.is_offload = True
 
-                print('region_to_offload', region_to_offload.r_id, region_to_region_map[region_to_offload.r_id].r_id, self.peak_mem/1024**2)
+                print('region_to_offload', region_to_offload.r_id, region_to_region_map[region_to_offload.r_id].r_id,
+                      self.peak_mem / 1024 ** 2)
                 if region_to_region_map[region_to_offload.r_id] == region_to_offload:
                     region_to_offload.is_syn = True
                 else:
@@ -275,6 +292,7 @@ class AsynGreedySolver:
 
         orig_prefetch = host_region.region_to_prefetch
         orig_is_syn = offload_region.is_syn
+        assert orig_prefetch is not None and not orig_is_syn
 
         host_region.region_to_prefetch = None
         offload_region.is_syn = True
@@ -329,13 +347,14 @@ class AsynGreedySolver:
         self.region_prefetch_stream.clear()
 
         compute_timestamp = 0
-        prefetch_timestamp = 0
         comp_time_deps = {}
 
         # forward
         for region in self.region_list:
             # upload parameter
-            compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
+            if region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
+                    region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload):
+                compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
 
             start_comp = compute_timestamp
             for node in region.nodes:
@@ -343,6 +362,7 @@ class AsynGreedySolver:
             self.region_compute_stream.append([start_comp, compute_timestamp])
 
         # backward
+        prefetch_timestamp = compute_timestamp
         for region in self.region_list.__reversed__():
 
             if region.is_syn:
@@ -372,7 +392,9 @@ class AsynGreedySolver:
             self.region_compute_stream.append([start_comp, compute_timestamp])
 
             # offload gradient
-            compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
+            if region.region_shared_param is None or region.r_id < region.region_shared_param.r_id:
+                compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
+        self.region_compute_stream[-1][1] = compute_timestamp
 
     def _compute_offload_profit(self, mem_saving: float, extra_cost: float):
         if extra_cost == 0:
@@ -395,7 +417,9 @@ class AsynGreedySolver:
         # forward
         for region in self.region_list:
             # upload parameter
-            runtime_mem += region.param_size
+            if region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
+                    region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload):
+                runtime_mem += region.param_size
 
             for node in region.nodes:
                 runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
@@ -423,7 +447,10 @@ class AsynGreedySolver:
                 runtime_mem += region.param_size
 
             # add the gradient of the parameter
-            runtime_mem += region.param_size
+            if region.region_shared_param is not None and region.r_id < region.region_shared_param.r_id:
+                runtime_mem += 2.0 * region.param_size
+            else:
+                runtime_mem += region.param_size
 
             for node in region.nodes.__reversed__():
 
@@ -462,7 +489,12 @@ class AsynGreedySolver:
                         grad_in_computed[in_node] = True
 
             # release parameter and offload gradient in region
-            runtime_mem -= 2.0 * region.param_size
+            if region.region_shared_param is None:
+                runtime_mem -= 2.0 * region.param_size
+            elif region.r_id < region.region_shared_param.r_id:
+                runtime_mem -= 3.0 * region.param_size
+            elif region.region_shared_param.is_offload:
+                runtime_mem -= region.param_size
 
         if update_flag:
             assert self.peak_mem == cur_peak_mem
@@ -475,7 +507,19 @@ class AsynGreedySolver:
 
         comp_time_deps = {}
 
-        compute_timestamp = self.region_compute_stream[len(self.region_compute_stream) // 2][0]
+        # forward
+        compute_timestamp = 0
+        for region in self.region_list:
+            # upload parameter
+            if region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
+                    region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload):
+                compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
+            for node in region.nodes:
+                compute_timestamp += node.meta.get('fwd_flop', 0) / SystemConfig.COMPUTE_POWER
+
+        # compute_timestamp = self.region_compute_stream[len(self.region_compute_stream) // 2][0]
+
+        # backward
         prefetch_timestamp = compute_timestamp
         for region in self.region_list.__reversed__():
 
@@ -498,7 +542,7 @@ class AsynGreedySolver:
 
             for node in region.nodes.__reversed__():
                 compute_timestamp += node.meta.get('bwd_flop', 0) / SystemConfig.COMPUTE_POWER
-                if node.node_info.param_size > 0:
+                if region.region_shared_param is None or region.r_id < region.region_shared_param.r_id:
                     # offload gradient
                     compute_timestamp += node.node_info.param_size / SystemConfig.BANDWIDTH
 

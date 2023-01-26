@@ -8,6 +8,7 @@ from colossalai.fx.profiler import (calculate_fwd_out, calculate_fwd_tmp, calcul
 
 from offload_strategy import OffloadStrategiesVector
 
+
 @dataclass
 class Region:
     r_id: int = 0
@@ -18,6 +19,7 @@ class Region:
     # out_node: Node = None
     region_to_prefetch = None
     is_syn: bool = False
+    region_shared_param = None
 
 
 class ModelParameters:
@@ -25,11 +27,12 @@ class ModelParameters:
     fp16_params = []
     fp32_master_params = []
     # param_offload_dict = {}
-    param_names = []
+
 
 class GlobalCudaInfo:
     h2d_stream = torch.cuda.Stream()
     prefetch_event_map = {}
+
 
 @dataclass
 class NodeInfo:
@@ -85,8 +88,29 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
                     grad_in_computed[in_node] = True
     return act_peak_mem
 
+
 def compute_max_param_mem(region_list: List[Region]) -> float:
     return max(region.param_size for region in region_list)
 
+
 def compute_total_param_mem(region_list: List[Region]) -> float:
     return sum(region.param_size for region in region_list)
+
+
+def requires_upload_p_in_fwd(region: Region):
+    return region.param_size > 0 and (
+            region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
+            region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload))
+
+def requires_offload_g_in_bwd(region: Region):
+    return region.region_shared_param is None or region.r_id < region.region_shared_param.r_id
+
+def requires_release_p_in_bwd(region: Region):
+    return region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
+                region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload)
+
+def is_first_shared_region(region: Region) -> bool:
+    return region.region_shared_param is not None and region.r_id < region.region_shared_param.r_id
+
+def is_last_shared_region(region: Region) -> bool:
+    return region.region_shared_param is not None and region.r_id > region.region_shared_param.r_id
