@@ -253,6 +253,7 @@ class OffloadStrategiesConstructor:
                 if p in self.param_to_region_map:
                     print(f"region {cur_reg.r_id} param existed! {p.data.numel() * p.data.element_size() / 1024 ** 2}")
                     cur_reg.region_shared_param = self.param_to_region_map[p]
+                    self.param_to_region_map[p].region_shared_param = cur_reg
                 else:
                     self.param_to_region_map[p] = cur_reg
 
