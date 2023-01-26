@@ -258,7 +258,7 @@ class AsynGreedySolver:
             else:
                 raise RuntimeError(
                     f"can't find the offload strategy met the memory budget {self.memory_budget / 1024 ** 2} MB, "
-                    f"it needs {self.peak_mem / 1024 ** 2} at least!")
+                    f"it needs {self.peak_mem / 1024 ** 2:.3f} MB at least!")
 
             self._update_rumtime_mem_for_node()
             self._update_exec_stream_and_node_info()
