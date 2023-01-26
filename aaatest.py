@@ -38,15 +38,17 @@ class NetWithRepeatedlyComputedLayers(nn.Module):
 
 from typing import List
 model = SimpleNet()
-ps = []
+ps = {}
 for p in model.parameters():
-    ps.append(p)
+    print(ps.get(p, None) is None)
+    ps[p] = 1
 
-print(ps[0] == ps[1])
+
 
 print("*******************************")
 model = NetWithRepeatedlyComputedLayers()
-ps = []
+ps = {}
 for p in model.parameters():
-    ps.append(p)
+    print(ps.get(p, None) is None)
+    ps[p] = 1
 
