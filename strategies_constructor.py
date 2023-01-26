@@ -26,6 +26,7 @@ class OffloadStrategiesConstructor:
         self.no_strategy_nodes = []
         self.cnode = cnode
         self.only_param_ops = []
+        self.unique_params = set()
 
     def _linearize_graph(self) -> List[Region]:
         """Linearizing the graph
@@ -250,11 +251,13 @@ class OffloadStrategiesConstructor:
             for p in list(submod.parameters(recurse=False)):
                 node_info.param_indices.append(ModelParameters.param_idx)
                 node_info.param_size += p.data.numel() * p.data.element_size()
-                # if ModelParameters.fp16_params.__contains__(p):
-                #     print(f"exist param: {p.data.numel() * p.data.element_size()/1024**2}")
-                ModelParameters.fp16_params.append(p)
-                ModelParameters.fp32_master_params.append(p.detach().clone().float().pin_memory())
-                ModelParameters.param_idx += 1
+                if p in self.unique_params:
+                    print(f"param existed! {p.data.numel() * p.data.element_size()/1024**2}")
+                else:
+                    self.unique_params.add(p)
+                    ModelParameters.fp16_params.append(p)
+                    ModelParameters.fp32_master_params.append(p.detach().clone().float().pin_memory())
+                    ModelParameters.param_idx += 1
 
         elif cur_n.op == "get_attr":
             attr_itr = self.root_module
@@ -265,11 +268,13 @@ class OffloadStrategiesConstructor:
             if isinstance(attr_itr, torch.nn.Parameter):
                 node_info.param_indices.append(ModelParameters.param_idx)
                 node_info.param_size += attr_itr.data.numel() * attr_itr.data.element_size()
-                # if ModelParameters.fp16_params.__contains__(attr_itr):
-                #     print(f"exist param: {attr_itr.data.numel() * attr_itr.data.element_size()/1024**2}")
-                ModelParameters.fp16_params.append(attr_itr)
-                ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float().pin_memory())
-                ModelParameters.param_idx += 1
+                if attr_itr in self.unique_params:
+                    print(f"param existed! {attr_itr.data.numel() * attr_itr.data.element_size() / 1024 ** 2}")
+                else:
+                    self.unique_params.add(attr_itr)
+                    ModelParameters.fp16_params.append(attr_itr)
+                    ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float().pin_memory())
+                    ModelParameters.param_idx += 1
 
         cur_n.node_info = node_info
         cur_reg.param_size += node_info.param_size
