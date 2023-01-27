@@ -472,7 +472,7 @@ class AsynGreedySolver:
                 runtime_mem -= calculate_fwd_out(node)
 
                 if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
-                    print("cur peak mem too high in backward", node, region)
+                    print("cur peak mem too high in backward", node, region.r_id)
                     return 0, 0
 
                 runtime_mem = runtime_mem + node.meta['bwd_mem_tmp'] + node.meta['bwd_mem_out']

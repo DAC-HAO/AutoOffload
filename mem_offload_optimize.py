@@ -17,8 +17,8 @@ from util import compute_max_param_mem, compute_total_param_mem, compute_act_pea
 
 def memory_optimization(model: torch.nn.Module,
                         inps: Dict[str, torch.Tensor],
-                        memory_budget: float=-1.0,
-                        is_syn: bool=True):
+                        memory_budget: float = -1.0,
+                        is_syn: bool = True):
     model.cpu()
     tracer = ColoTracer()
     assert is_compatible_with_meta()
@@ -47,7 +47,8 @@ def memory_optimization(model: torch.nn.Module,
     print("****************** offload plan *******************")
     for region in region_list:
         if region.is_offload or (region.region_to_prefetch is not None):
-            print(region.r_id, region.region_to_prefetch, region.is_offload)
+            print(region.r_id, region.region_to_prefetch.r_id if region.region_to_prefetch is not None else None,
+                  region.is_offload)
 
     gm = runtime_asyn_offload_apply_pass(gm, region_list)
 
