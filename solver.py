@@ -24,7 +24,8 @@ class SynGreedySolver:
 
     def _call_solver_greedy(self):
         peak_mem_saving, total_mem_saving = self._compute_mem_saving()
-        assert peak_mem_saving == 0 and total_mem_saving == 0
+        assert peak_mem_saving == 0 and total_mem_saving == 0, \
+            f"pms={peak_mem_saving / 1024 ** 2:.3f}MB, tms={total_mem_saving / 1024 ** 2:.3f}MB"
         while self.peak_mem > self.memory_budget:
             offload_region = None
             max_profit = 0
@@ -52,7 +53,6 @@ class SynGreedySolver:
                 raise RuntimeError(
                     f"can't find the offload strategy met the memory budget {self.memory_budget / 1024 ** 2} MB, "
                     f"it needs {self.peak_mem / 1024 ** 2:.3f} MB at least!")
-
 
     def _call_solver_l2l(self):
         for region in self.region_list[:-1]:
@@ -144,7 +144,8 @@ class SynGreedySolver:
                         grad_in_computed[in_node] = True
 
                 if runtime_mem < 0:
-                    raise RuntimeError(f"region id: {region.r_id}, node name: {node.name} ---"
+                    raise RuntimeError(f"region id: {region.r_id}, node name: {node.name}, "
+                                       f"runtime_mem: {runtime_mem / 1024 ** 2:.3f}MB ---"
                                        f"runtime memory computed less than 0, which is miscalculated!")
 
             # release parameter and offload gradient in region
