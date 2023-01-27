@@ -216,8 +216,7 @@ class OffloadStrategiesConstructor:
                 # if the node could free all dependencies in graph
                 # we could begin a new node
                 # if _is_sink() or _is_param_comp_end():
-                if _is_param_comp_end() or (
-                        region.region_shared_param is not None and region.r_id > region.region_shared_param.r_id):
+                if _is_param_comp_end():
                     region_list.append(region)
                     region_id += 1
                     region = Region(r_id=region_id, nodes=[], param_indices=[])
