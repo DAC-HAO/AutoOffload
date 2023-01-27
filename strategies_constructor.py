@@ -149,6 +149,11 @@ class OffloadStrategiesConstructor:
 
             return label and not sum([v for _, v in param_op_deps.items()]) and not any(map(_is_inplace, n.users))
 
+        def _exception_node_handling():
+            # TODO meta info prop bug
+            if n.name.__contains__("transpose") and n.meta['fwd_out'][0].dim() <= 2:
+                n.meta['fwd_out'] = []
+
         def _is_sink() -> bool:
             """Check if we can free all dependencies
 
@@ -209,6 +214,7 @@ class OffloadStrategiesConstructor:
                     region_id += 1
                     region = Region(r_id=region_id, nodes=ns, param_indices=[])
 
+                _exception_node_handling()
                 region.nodes.append(n)
                 self._set_node_and_region_info(node_id, n, region)
                 node_id += 1
