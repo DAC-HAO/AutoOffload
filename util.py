@@ -64,7 +64,11 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
     for region in region_list:
         for node in region.nodes:
 
-            runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
+            if node.name.__contains__("transpose") and node.meta['fwd_out'][0].dim() <= 2:
+                print(calculate_fwd_tmp(node) + calculate_fwd_out(node))
+                print(node.meta['fwd_out'])
+            else:
+                runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
 
             # if (runtime_mem - act_peak_mem) / 1024 ** 2 > 1 or node.name.__contains__("transpose"):
             #     print(f"n_name: {node.name} | fwd_mem_tmp={calculate_fwd_tmp(node) / 1024 ** 2:.3f} MB | "
