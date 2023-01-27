@@ -281,7 +281,7 @@ def t5_data_gen(device="meta"):
 def get_bert_components():
     vocab_size = 30522
     seq_len = 8
-    batchSize = 8
+    batchSize = 16
 
     def bert_model_builder(checkpoint=False):
         model = BertLMModel(hidden_size=768, num_layers=12, num_attention_heads=12, vocab_size=vocab_size,
@@ -301,7 +301,7 @@ def get_bert_components():
 def get_gpt2_components():
     vocab_size = 50257
     seq_len = 8
-    batchSize = 1
+    batchSize = 8
 
     def gpt2_model_builder(checkpoint=False):
         model = GPTLMModel(hidden_size=1024, num_layers=12, num_attention_heads=16, vocab_size=vocab_size,
