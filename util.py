@@ -57,10 +57,12 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
     for region in region_list:
         for node in region.nodes:
             runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
-            if (runtime_mem-act_peak_mem)/1024**2 > 2:
-                print(node.name, "too high fwd node:", (runtime_mem-act_peak_mem)/1024**2)
+            if (runtime_mem - act_peak_mem) / 1024 ** 2 > 1:
+                print(node.name, "too high fwd node:", (runtime_mem - act_peak_mem) / 1024 ** 2,
+                      calculate_fwd_tmp(node) / 1024 ** 2, calculate_fwd_out(node) / 1024 ** 2,
+                      node.meta['bwd_mem_tmp'] / 1024 ** 2, node.meta['bwd_mem_out'] / 1024 ** 2)
             act_peak_mem = max(runtime_mem, act_peak_mem)
-    print("forward peak memory size:", act_peak_mem/1024**2, "MB")
+    print("forward peak memory size:", act_peak_mem / 1024 ** 2, "MB")
 
     # backward
     grad_in_computed = {}
@@ -71,7 +73,7 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
 
             act_peak_mem = max(runtime_mem, act_peak_mem)
             if runtime_mem > act_peak_mem:
-                print(node.name, "backward runtime memory size:", runtime_mem/1024**2, "MB")
+                print(node.name, "backward runtime memory size:", runtime_mem / 1024 ** 2, "MB")
 
             runtime_mem = runtime_mem - node.meta['bwd_mem_tmp'] - calculate_fwd_tmp(node)
 
@@ -107,15 +109,19 @@ def requires_upload_p_in_fwd(region: Region):
             region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
             region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload))
 
+
 def requires_offload_g_in_bwd(region: Region):
     return region.region_shared_param is None or region.r_id < region.region_shared_param.r_id
 
+
 def requires_release_p_in_bwd(region: Region):
     return region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
-                region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload)
+            region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload)
+
 
 def is_first_shared_region(region: Region) -> bool:
     return region.region_shared_param is not None and region.r_id < region.region_shared_param.r_id
+
 
 def is_last_shared_region(region: Region) -> bool:
     return region.region_shared_param is not None and region.r_id > region.region_shared_param.r_id
