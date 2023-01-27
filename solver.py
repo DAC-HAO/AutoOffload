@@ -212,6 +212,9 @@ class AsynGreedySolver:
             for region in self.region_list[:-1]:
                 assert region.r_id == self.region_list.index(region)
                 if region.param_size > 0 and not region.is_offload:
+                    if region.region_shared_param is not None and region.r_id > region.region_shared_param.r_id:
+                        continue
+
                     max_prefetch_profit = (0,)
 
                     # TODO 当前并未保证 prefetch 遵循 backward 的顺序执行
