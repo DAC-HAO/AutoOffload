@@ -60,7 +60,7 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
             if (runtime_mem - act_peak_mem) / 1024 ** 2 > 1:
                 print(node.name, "too high fwd node:", (runtime_mem - act_peak_mem) / 1024 ** 2,
                       calculate_fwd_tmp(node) / 1024 ** 2, calculate_fwd_out(node) / 1024 ** 2,
-                      node.meta['bwd_mem_tmp'] / 1024 ** 2, node.meta['bwd_mem_out'] / 1024 ** 2)
+                      node.meta['bwd_mem_tmp'] / 1024 ** 2, node.meta['bwd_mem_out'] / 1024 ** 2, node.meta["fwd_out"])
             act_peak_mem = max(runtime_mem, act_peak_mem)
     print("forward peak memory size:", act_peak_mem / 1024 ** 2, "MB")
 
