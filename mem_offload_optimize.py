@@ -38,7 +38,7 @@ def memory_optimization(model: torch.nn.Module,
     act_peak_mem = compute_act_peak_mem(region_list) / 1024 ** 2
     max_param_mem = compute_max_param_mem(region_list) / 1024 ** 2
     total_param_mem = compute_total_param_mem(region_list) / 1024 ** 2
-    print(f"act_peak_mem={act_peak_mem} MB | max_param_mem={max_param_mem} MB | total_param_mem={total_param_mem}")
+    print(f"act_peak_mem={act_peak_mem:.3f} MB | max_param_mem={max_param_mem:.3f} MB | total_param_mem={total_param_mem:.3f}")
 
     if exe_type == ExeType.Syn2Syn.value:
         solver = SynGreedySolver(region_list, memory_budget)
