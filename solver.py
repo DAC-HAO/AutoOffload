@@ -495,7 +495,7 @@ class AsynGreedySolver:
                 runtime_mem = runtime_mem + node.meta['bwd_mem_tmp'] + node.meta['bwd_mem_out']
 
                 # The memory savings of a node may be negative due to parameter prefetch.
-                total_mem_saving += (node.node_info.runtime_bwd_mem - runtime_mem)
+                total_mem_saving += max(node.node_info.runtime_bwd_mem - runtime_mem, 0)
 
                 cur_peak_mem = max(runtime_mem, cur_peak_mem)
 
