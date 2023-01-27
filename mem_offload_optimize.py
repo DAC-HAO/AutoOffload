@@ -54,6 +54,7 @@ def memory_optimization(model: torch.nn.Module,
         gm = runtime_syn_offload_apply_pass(gm, region_list)
     else:
         print(ExeType.Syn2Syn == 0, ExeType.Asyn2Asyn == 1, ExeType.Asyn2Syn == 2)
+        print(ExeType.Syn2Syn, ExeType.Asyn2Asyn, ExeType.Asyn2Syn)
         raise RuntimeError(f"exe_type only in [0, 1, 2], but get {exe_type}!")
 
     # print offload region
