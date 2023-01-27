@@ -437,6 +437,11 @@ class AsynGreedySolver:
                 runtime_mem += region.param_size
 
             for node in region.nodes:
+
+                # TODO meta info prop bug
+                if node.name.__contains__("transpose") and node.meta['fwd_out'][0].dim() <= 2:
+                    continue
+
                 runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
                 total_mem_saving += max(node.node_info.runtime_fwd_mem - runtime_mem, 0)
 

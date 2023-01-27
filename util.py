@@ -69,7 +69,7 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
             #           f"fwd_out={node.meta['fwd_out']}")
 
             act_peak_mem = max(runtime_mem, act_peak_mem)
-    print("forward peak memory size:", act_peak_mem / 1024 ** 2, "MB")
+    # print("forward peak memory size:", act_peak_mem / 1024 ** 2, "MB")
 
     # backward
     grad_in_computed = {}
