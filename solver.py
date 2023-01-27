@@ -45,6 +45,7 @@ class SynGreedySolver:
 
             # assert offload_region is not None
             if offload_region is not None:
+                print('region_to_offload', offload_region.r_id, self.peak_mem / 1024 ** 2)
                 offload_region.is_offload = True
                 offload_region.is_syn = True
                 self.peak_mem -= peak_mem_saving
