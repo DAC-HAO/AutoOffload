@@ -113,7 +113,7 @@ class SynGreedySolver:
                 runtime_mem = runtime_mem + node.meta['bwd_mem_tmp'] + node.meta['bwd_mem_out']
 
                 # The memory savings of a node may be negative due to parameter prefetch.
-                total_mem_saving += (node.node_info.runtime_bwd_mem - runtime_mem)
+                total_mem_saving += max(node.node_info.runtime_bwd_mem - runtime_mem, 0)
 
                 cur_peak_mem = max(runtime_mem, cur_peak_mem)
 
@@ -213,7 +213,7 @@ class AsynGreedySolver:
 
     def _call_solver_greedy(self):
         peak_mem_saving, total_mem_saving = self._compute_mem_saving()
-        assert peak_mem_saving == 0 and total_mem_saving < 0, \
+        assert peak_mem_saving == 0 and total_mem_saving == 0, \
             f"pms={peak_mem_saving / 1024 ** 2:.3f}MB, tms={total_mem_saving / 1024 ** 2:.3f}MB"
         print("region num", len(self.region_list))
         print("init peak memory", self.peak_mem / 1024 ** 2, "MB")
