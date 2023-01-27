@@ -13,9 +13,9 @@ from mem_offload_optimize import memory_optimization
 from model_utils import *
 
 parser = argparse.ArgumentParser(description="offload testing")
-parser.add_argument("-m_name", type=str, default="simplenet",
+parser.add_argument("-mn", type=str, default="simplenet",
                     help="model name")
-parser.add_argument("-mem_size", type=float, default=32, help="memory budget (MB)")
+parser.add_argument("-ms", type=float, default=32, help="memory budget (MB)")
 parser.add_argument('-is_syn', action='store_true', help='If true, offload is performed synchronously.')
 args = parser.parse_args()
 

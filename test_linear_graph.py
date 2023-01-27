@@ -36,9 +36,9 @@ def partition_graph(model: torch.nn.Module, inps: Dict[str, torch.Tensor]):
 
 
 parser = argparse.ArgumentParser(description="offload testing")
-parser.add_argument("-m_name", type=str, default="simplenet",
+parser.add_argument("-mn", type=str, default="simplenet",
                     help="model name")
-parser.add_argument("-mem_size", type=float, default=32, help="memory budget (MB)")
+parser.add_argument("-ms", type=float, default=32, help="memory budget (MB)")
 parser.add_argument('-is_syn', action='store_true', help='If true, offload is performed synchronously.')
 args = parser.parse_args()
 
