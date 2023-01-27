@@ -35,18 +35,24 @@ class SynGreedySolver:
                     comm_cost = region.param_size / SystemConfig.BANDWIDTH
                     if region.region_shared_param is not None and region.r_id < region.region_shared_param.r_id:
                         comm_cost *= 2.0
-                    profit = peak_mem_saving / comm_cost
+                    profit = tmp_peak_mem_saving / comm_cost
                     if profit > max_profit:
                         offload_region = region
                         max_profit = profit
                         peak_mem_saving = tmp_peak_mem_saving
                     region.is_offload = False
 
-            assert offload_region is not None
-            offload_region.is_offload = True
-            offload_region.is_syn = True
-            self._update_rumtime_mem_for_node()
-            self.peak_mem -= peak_mem_saving
+            # assert offload_region is not None
+            if offload_region is not None:
+                offload_region.is_offload = True
+                offload_region.is_syn = True
+                self._update_rumtime_mem_for_node()
+                self.peak_mem -= peak_mem_saving
+            else:
+                raise RuntimeError(
+                    f"can't find the offload strategy met the memory budget {self.memory_budget / 1024 ** 2} MB, "
+                    f"it needs {self.peak_mem / 1024 ** 2:.3f} MB at least!")
+
 
     def _call_solver_l2l(self):
         for region in self.region_list[:-1]:
@@ -69,6 +75,11 @@ class SynGreedySolver:
                 runtime_mem += region.param_size
 
             for node in region.nodes:
+
+                # TODO meta info prop bug
+                if node.name.__contains__("transpose") and node.meta['fwd_out'][0].dim() <= 2:
+                    continue
+
                 runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
                 total_mem_saving += max(node.node_info.runtime_fwd_mem - runtime_mem, 0)
 
@@ -99,16 +110,16 @@ class SynGreedySolver:
             for node in region.nodes.__reversed__():
 
                 runtime_mem -= calculate_fwd_out(node)
-
-                if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
-                    print("cur peak mem too high in backward", node, region)
-
                 runtime_mem = runtime_mem + node.meta['bwd_mem_tmp'] + node.meta['bwd_mem_out']
 
                 # The memory savings of a node may be negative due to parameter prefetch.
                 total_mem_saving += (node.node_info.runtime_bwd_mem - runtime_mem)
 
                 cur_peak_mem = max(runtime_mem, cur_peak_mem)
+
+                if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
+                    print("cur peak mem too high in backward", node, region.r_id)
+                    return 0, 0
 
                 if update_flag:
                     node.node_info.runtime_bwd_mem = runtime_mem
@@ -475,17 +486,16 @@ class AsynGreedySolver:
             for node in region.nodes.__reversed__():
 
                 runtime_mem -= calculate_fwd_out(node)
-
-                if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
-                    print("cur peak mem too high in backward", node, region.r_id)
-                    return 0, 0
-
                 runtime_mem = runtime_mem + node.meta['bwd_mem_tmp'] + node.meta['bwd_mem_out']
 
                 # The memory savings of a node may be negative due to parameter prefetch.
                 total_mem_saving += (node.node_info.runtime_bwd_mem - runtime_mem)
 
                 cur_peak_mem = max(runtime_mem, cur_peak_mem)
+
+                if cur_peak_mem > self.peak_mem and self.peak_mem > 0:
+                    print("cur peak mem too high in backward", node, region.r_id)
+                    return 0, 0
 
                 if update_flag:
                     node.node_info.runtime_bwd_mem = runtime_mem
