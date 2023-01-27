@@ -288,3 +288,6 @@ class OffloadStrategiesConstructor:
         cur_n.node_info = node_info
         cur_reg.param_size += node_info.param_size
         cur_reg.param_indices.extend(node_info.param_indices)
+
+        if cur_reg.region_shared_param is not None and cur_reg.r_id > cur_reg.region_shared_param.r_id:
+            cur_reg.param_size = cur_reg.region_shared_param.param_size
