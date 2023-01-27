@@ -20,14 +20,14 @@ parser.add_argument('-is_syn', action='store_true', help='If true, offload is pe
 args = parser.parse_args()
 
 # build model
-get_components_func = non_distributed_component_funcs.get_callable(args.m_name)
+get_components_func = non_distributed_component_funcs.get_callable(args.mn)
 model_builder, data_gen = get_components_func()
 data_args = data_gen(device="cpu")
 model = model_builder()
 
 param_size = parameter_size(model) / 1024 ** 2
 print("init param size: ", param_size)
-model = memory_optimization(model, data_args, 1024 * 1024 * args.mem_size, args.is_syn)
+model = memory_optimization(model, data_args, 1024 * 1024 * args.ms, args.is_syn)
 wrap_fn = lambda x: x.to("cuda") if isinstance(x, torch.Tensor) else x
 data_args = tree_map(wrap_fn, data_args)
 

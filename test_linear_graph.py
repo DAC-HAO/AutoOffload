@@ -43,7 +43,7 @@ parser.add_argument('-is_syn', action='store_true', help='If true, offload is pe
 args = parser.parse_args()
 
 # build model
-get_components_func = non_distributed_component_funcs.get_callable(args.m_name)
+get_components_func = non_distributed_component_funcs.get_callable(args.mn)
 model_builder, data_gen = get_components_func()
 data_args = data_gen(device="cpu")
 model = model_builder()
