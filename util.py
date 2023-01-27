@@ -84,7 +84,8 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
             runtime_mem = runtime_mem + node.meta['bwd_mem_tmp'] + node.meta['bwd_mem_out']
 
             if runtime_mem > act_peak_mem:
-                print(node.name, "backward runtime memory size:", runtime_mem / 1024 ** 2, "MB")
+                print(node.name, "backward runtime memory size:", runtime_mem / 1024 ** 2, "MB\t param size",
+                      node.node_info.param_size / 1024 ** 2, "MB")
             act_peak_mem = max(runtime_mem, act_peak_mem)
 
             runtime_mem = runtime_mem - node.meta['bwd_mem_tmp'] - calculate_fwd_tmp(node)
