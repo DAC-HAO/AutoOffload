@@ -47,12 +47,14 @@ class SynGreedySolver:
             if offload_region is not None:
                 offload_region.is_offload = True
                 offload_region.is_syn = True
-                self._update_rumtime_mem_for_node()
                 self.peak_mem -= peak_mem_saving
             else:
                 raise RuntimeError(
                     f"can't find the offload strategy met the memory budget {self.memory_budget / 1024 ** 2} MB, "
                     f"it needs {self.peak_mem / 1024 ** 2:.3f} MB at least!")
+
+            self._update_rumtime_mem_for_node()
+
 
     def _call_solver_l2l(self):
         for region in self.region_list[:-1]:
