@@ -284,7 +284,7 @@ def get_bert_components():
     batchSize = 8
 
     def bert_model_builder(checkpoint=False):
-        model = BertLMModel(hidden_size=768, num_layers=2, num_attention_heads=12, vocab_size=vocab_size,
+        model = BertLMModel(hidden_size=768, num_layers=12, num_attention_heads=12, vocab_size=vocab_size,
                             checkpoint=checkpoint)
         return model
 
@@ -304,7 +304,7 @@ def get_gpt2_components():
     batchSize = 1
 
     def gpt2_model_builder(checkpoint=False):
-        model = GPTLMModel(hidden_size=1024, num_layers=1, num_attention_heads=16, vocab_size=vocab_size,
+        model = GPTLMModel(hidden_size=1024, num_layers=12, num_attention_heads=16, vocab_size=vocab_size,
                            checkpoint=checkpoint)
         return model
 
