@@ -25,9 +25,9 @@ model_builder, data_gen = get_components_func()
 data_args = data_gen(device="cpu")
 model = model_builder()
 
-param_size = parameter_size(model)/1024**2
+param_size = parameter_size(model) / 1024 ** 2
 print("init param size: ", param_size)
-model = memory_optimization(model, data_args, 1024*1024*args.mem_size, args.is_syn)
+model = memory_optimization(model, data_args, 1024 * 1024 * args.mem_size, args.is_syn)
 wrap_fn = lambda x: x.to("cuda") if isinstance(x, torch.Tensor) else x
 data_args = tree_map(wrap_fn, data_args)
 
@@ -56,7 +56,9 @@ loss.backward()
 torch.cuda.synchronize()
 
 exec_time = time.time() - start_time
-runtime_peak_mem = torch.cuda.max_memory_allocated()/1024**2
+runtime_peak_mem_alc = torch.cuda.max_memory_allocated() / 1024 ** 2
+runtime_peak_mem_res = torch.cuda.max_memory_reserved() / 1024 ** 2
 print(
-        f'|exec_time={exec_time:.3f} s | param_size={param_size:.3f} MB | runtime_peak_mem={runtime_peak_mem:.3f} MB|'
-    )
+    f'|exec_time={exec_time:.3f} s | param_size={param_size:.3f} MB '
+    f'| runtime_peak_mem_alc={runtime_peak_mem_alc:.3f} MB| runtime_peak_mem_res={runtime_peak_mem_res:.3f} MB|'
+)
