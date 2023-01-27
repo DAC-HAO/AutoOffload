@@ -144,7 +144,8 @@ class SynGreedySolver:
                         grad_in_computed[in_node] = True
 
                 if runtime_mem < 0:
-                    raise RuntimeError("runtime memory computed less than 0, which is miscalculated!")
+                    raise RuntimeError(f"region id: {region.r_id}, node name: {node.name} ---"
+                                       f"runtime memory computed less than 0, which is miscalculated!")
 
             # release parameter and offload gradient in region
             if region.region_shared_param is None:
