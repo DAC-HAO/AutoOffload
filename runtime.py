@@ -307,7 +307,10 @@ def runtime_asyn_offload_apply_pass(gm: torch.fx.GraphModule, region_list: List[
 
         # upload parameters
         if requires_upload_p_in_fwd(region):
-            param_indices = region.param_indices
+            if region.region_shared_param is not None:
+                param_indices = region.region_shared_param.param_indices
+            else:
+                param_indices = region.param_indices
             assert isinstance(param_indices, list)
 
             def _extract_last_input_node(cur_node):
