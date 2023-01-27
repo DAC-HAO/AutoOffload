@@ -40,21 +40,19 @@ def memory_optimization(model: torch.nn.Module,
     total_param_mem = compute_total_param_mem(region_list) / 1024 ** 2
     print(f"act_peak_mem={act_peak_mem} MB | max_param_mem={max_param_mem} MB | total_param_mem={total_param_mem}")
 
-    if exe_type == ExeType.Syn2Syn:
+    if exe_type == ExeType.Syn2Syn.value:
         solver = SynGreedySolver(region_list, memory_budget)
         solver._call_solver_greedy()
         gm = runtime_syn_offload_apply_pass(gm, region_list)
-    elif exe_type == ExeType.Asyn2Asyn:
+    elif exe_type == ExeType.Asyn2Asyn.value:
         solver = AsynGreedySolver(region_list, memory_budget)
         solver._call_solver_greedy()
         gm = runtime_asyn_offload_apply_pass(gm, region_list)
-    elif exe_type == ExeType.Asyn2Syn:
+    elif exe_type == ExeType.Asyn2Syn.value:
         solver = AsynGreedySolver(region_list, memory_budget)
         solver._call_solver_greedy()
         gm = runtime_syn_offload_apply_pass(gm, region_list)
     else:
-        print(ExeType.Syn2Syn == 0, ExeType.Asyn2Asyn == 1, ExeType.Asyn2Syn == 2)
-        print(ExeType.Syn2Syn, ExeType.Asyn2Asyn, ExeType.Asyn2Syn)
         raise RuntimeError(f"exe_type only in [0, 1, 2], but get {exe_type}!")
 
     # print offload region
