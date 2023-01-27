@@ -78,7 +78,7 @@ class SynGreedySolver:
 
                 # TODO meta info prop bug
                 if node.name.__contains__("transpose") and node.meta['fwd_out'][0].dim() <= 2:
-                    continue
+                    pass
                 else:
                     runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
 
@@ -458,7 +458,7 @@ class AsynGreedySolver:
 
                 # TODO meta info prop bug
                 if node.name.__contains__("transpose") and node.meta['fwd_out'][0].dim() <= 2:
-                    continue
+                    pass
                 else:
                     runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
 
