@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Dict
+from enum import Enum
 import torch
 from torch.fx import Graph, Node
 
@@ -47,6 +48,12 @@ class NodeInfo:
     node_to_prefetch: Node = None
     syn_upload_flag: bool = False
     prefetch_end_timestamp: float = 0
+
+
+class ExeType(Enum):
+    Syn2Syn = 0
+    Asyn2Asyn = 1
+    Asyn2Syn = 2
 
 
 def compute_act_peak_mem(region_list: List[Region]) -> float:

@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser(description="offload testing")
 parser.add_argument("-mn", type=str, default="simplenet",
                     help="model name")
 parser.add_argument("-ms", type=float, default=32, help="memory budget (MB)")
-parser.add_argument('-is_syn', action='store_true', help='If true, offload is performed synchronously.')
+parser.add_argument('-et', type=int, default=1, choices=[0,1,2], help='execution type')
 args = parser.parse_args()
 
 # build model
@@ -27,7 +27,7 @@ model = model_builder()
 
 param_size = parameter_size(model) / 1024 ** 2
 print("init param size: ", param_size)
-model = memory_optimization(model, data_args, 1024 * 1024 * args.ms, args.is_syn)
+model = memory_optimization(model, data_args, 1024 * 1024 * args.ms, args.et)
 wrap_fn = lambda x: x.to("cuda") if isinstance(x, torch.Tensor) else x
 data_args = tree_map(wrap_fn, data_args)
 

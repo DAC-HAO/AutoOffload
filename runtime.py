@@ -271,19 +271,24 @@ def runtime_syn_offload_apply_pass(gm: torch.fx.GraphModule, region_list: List[R
     mod_graph = gm.graph
     for r_idx, region in enumerate(region_list):
         assert r_idx == region.r_id
-        if region.param_size > 0:
-            param_indices = region.param_indices
+        # upload parameter
+        if requires_upload_p_in_fwd(region):
+            if region.region_shared_param is not None:
+                param_indices = region.region_shared_param.param_indices
+            else:
+                param_indices = region.param_indices
             assert isinstance(param_indices, list)
 
             if r_idx == 0:
                 last_inp_node = tuple(mod_graph.nodes)[0]
             else:
                 last_inp_node = region_list[r_idx - 1].nodes[-1]
+            release_p_flag = requires_release_p_in_bwd(region)
 
             # mod_graph.inserting_before(node) maybe invalid
             with mod_graph.inserting_after(last_inp_node):
                 upload_apply_node = mod_graph.create_node('call_function', convert_upload_to_action,
-                                                          args=(last_inp_node, param_indices))
+                                                          args=(last_inp_node, param_indices, release_p_flag))
             replace_node_users(last_inp_node, upload_apply_node)
 
             if region.is_offload:
