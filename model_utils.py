@@ -206,11 +206,11 @@ class MyOPT(nn.Module):
 class MyAlbert(nn.Module):
     def __init__(self):
         super().__init__()
-        self.model = AlbertModel(config=AlbertConfig(embedding_size=128,
-                            hidden_size=128,
-                            num_hidden_layers=2,
-                            num_attention_heads=4,
-                            intermediate_size=256))
+        self.model = AlbertModel(config=AlbertConfig(embedding_size=1024,
+                            hidden_size=1024,
+                            num_hidden_layers=12,
+                            num_attention_heads=16,
+                            intermediate_size=2048))
 
     def forward(self, input_ids, token_type_ids, attention_mask):
         return self.model(input_ids=input_ids, token_type_ids=token_type_ids,
