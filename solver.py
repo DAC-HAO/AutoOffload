@@ -274,11 +274,12 @@ class AsynGreedySolver:
             region_to_region_map.clear()
             region_to_mem_saving_map.clear()
 
-    def _eval_one_choice(self):
+    def _eval_one_choice(self, use_peak=True):
         peak_mem_saving, total_mem_saving = self._compute_mem_saving()
         assert peak_mem_saving >= 0
         extra_comm_cost = self._compute_extra_comm_cost()
-        profit = self._compute_offload_profit(peak_mem_saving, extra_comm_cost)
+        mem_saving = peak_mem_saving if use_peak else total_mem_saving
+        profit = self._compute_offload_profit(mem_saving, extra_comm_cost)
         # profit = self._compute_offload_profit(total_mem_saving, extra_comm_cost)
         return profit, peak_mem_saving, total_mem_saving
 
@@ -311,7 +312,7 @@ class AsynGreedySolver:
         host_region.region_to_prefetch = None
         offload_region.is_syn = True
 
-        profit, peak_mem_saving, total_mem_saving = self._eval_one_choice()
+        profit, peak_mem_saving, total_mem_saving = self._eval_one_choice(use_peak=False)
 
         host_region.region_to_prefetch = orig_prefetch
         offload_region.is_syn = orig_is_syn
@@ -327,10 +328,10 @@ class AsynGreedySolver:
         while peak_mem_saving <= 0:
 
             max_profit = (0,)
-            if self.region_to_region_map.__len__() == 0:
-                return True
-            undo_offload_region_id, undo_host_region = list(self.region_to_region_map.items())[0]
-            undo_offload_region = self.region_list[undo_offload_region_id]
+            # if self.region_to_region_map.__len__() == 0:
+            #     return
+            undo_host_region = None
+            undo_offload_region = None
 
             for offload_region_id, host_region in self.region_to_region_map.items():
                 offload_region = self.region_list[offload_region_id]
@@ -340,9 +341,9 @@ class AsynGreedySolver:
 
                 profit, tmp_peak_mem_saving, tmp_total_mem_saving = self._try_convert_to_syn_prefetch(host_region,
                                                                                                       offload_region)
-                if tmp_peak_mem_saving <= 0:
-                    print("not reduce peak memory:", offload_region_id, host_region.r_id)
-                    # continue
+                # if tmp_peak_mem_saving <= 0:
+                #     print("not reduce peak memory:", offload_region_id, host_region.r_id)
+                #     # continue
 
                 if self._compare_profit(profit, max_profit):
                     undo_host_region = host_region
@@ -354,6 +355,8 @@ class AsynGreedySolver:
                 succeed = False
                 print("repair failed!!!")
                 break
+                # undo_offload_region_id, undo_host_region = list(self.region_to_region_map.items())[0]
+                # undo_offload_region = self.region_list[undo_offload_region_id]
 
             assert not undo_offload_region.is_syn
             undo_offload_region.is_syn = True
