@@ -278,8 +278,8 @@ class AsynGreedySolver:
         peak_mem_saving, total_mem_saving = self._compute_mem_saving()
         assert peak_mem_saving >= 0
         extra_comm_cost = self._compute_extra_comm_cost()
-        profit = self._compute_offload_profit(peak_mem_saving, extra_comm_cost)
-        # profit = self._compute_offload_profit(total_mem_saving, extra_comm_cost)
+        # profit = self._compute_offload_profit(peak_mem_saving, extra_comm_cost)
+        profit = self._compute_offload_profit(total_mem_saving, extra_comm_cost)
         return profit, peak_mem_saving, total_mem_saving
 
     def _try_to_offload(self, host_region: Region, offload_region: Region):
