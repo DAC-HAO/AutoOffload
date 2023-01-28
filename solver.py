@@ -278,8 +278,8 @@ class AsynGreedySolver:
         peak_mem_saving, total_mem_saving = self._compute_mem_saving()
         assert peak_mem_saving >= 0
         extra_comm_cost = self._compute_extra_comm_cost()
-        # profit = self._compute_offload_profit(peak_mem_saving, extra_comm_cost)
-        profit = self._compute_offload_profit(total_mem_saving, extra_comm_cost)
+        profit = self._compute_offload_profit(peak_mem_saving, extra_comm_cost)
+        # profit = self._compute_offload_profit(total_mem_saving, extra_comm_cost)
         return profit, peak_mem_saving, total_mem_saving
 
     def _try_to_offload(self, host_region: Region, offload_region: Region):
@@ -327,8 +327,9 @@ class AsynGreedySolver:
         while peak_mem_saving <= 0:
 
             max_profit = (0,)
-            undo_host_region = None
-            undo_offload_region = None
+            # undo_offload_region = self.region_list[list(self.region_to_region_map.keys())[0]]
+            undo_offload_region_id, undo_host_region = list(self.region_to_region_map.items())[0]
+            undo_offload_region = self.region_list[undo_offload_region_id]
 
             for offload_region_id, host_region in self.region_to_region_map.items():
                 offload_region = self.region_list[offload_region_id]

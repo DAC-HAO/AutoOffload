@@ -75,3 +75,8 @@ r1.region_to_prefetch = None
 
 print(orig)
 print(r1.region_to_prefetch)
+
+
+aaa = {'a':1,'b':3}
+k, v = list(aaa.items())[0]
+print(k)
