@@ -519,10 +519,10 @@ class AsynGreedySolver:
             elif region.region_shared_param.is_offload:
                 runtime_mem -= region.param_size
 
-        if update_flag:
-            assert self.peak_mem == cur_peak_mem
         if self.peak_mem < 0:
             self.peak_mem = cur_peak_mem
+        if update_flag:
+            assert self.peak_mem == cur_peak_mem
         peak_mem_saving = self.peak_mem - cur_peak_mem
         return peak_mem_saving, total_mem_saving
 
