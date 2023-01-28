@@ -56,21 +56,22 @@ import bisect
 # p = model.fc3.weight
 # print(ps.get(p, None) is None)
 
-import numpy as np
-import random
-import torch
+from dataclasses import dataclass
+@dataclass
+class Region:
+    r_id: int = 0
+    is_offload: bool = False
+    param_size: int = 0
+    region_to_prefetch = None
+    is_syn: bool = False
+    region_shared_param = None
 
-# aaa = ['a','b','c','d','e']
-# bbb = [[0,0],[1,1],[2,2],[3,3],[4,4]]
-# ccc = list(zip(aaa, bbb))
-# random.shuffle(ccc)
-# aaa[:], bbb[:] = zip(*ccc)
-# print(aaa)
-# print(bbb)
+r1 = Region(r_id=1)
+r2 = Region(r_id=2)
+r1.region_to_prefetch = r2
 
-a = [1,2,3]
-print(torch.as_tensor(a))
-a = torch.as_tensor(a)
-bbb = a.cumsum(0).tolist()
-print(bbb)
-print(bisect.bisect_right(bbb, 2))
+orig = r1.region_to_prefetch
+r1.region_to_prefetch = None
+
+print(orig)
+print(r1.region_to_prefetch)
