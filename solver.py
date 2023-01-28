@@ -95,6 +95,7 @@ class SynGreedySolver:
 
         # backward
         grad_in_computed = {}
+        bwd_deps = {}
         for region in self.region_list.__reversed__():
 
             # upload parameters
@@ -139,9 +140,19 @@ class SynGreedySolver:
                     #     fwd_out_released[in_node] = True
 
                     # map multiple gradients of output to one tensor
-                    if grad_in_computed.get(in_node, False):
-                        runtime_mem -= calculate_fwd_out(in_node)
+                    if not grad_in_computed.get(in_node, False):
+                        # runtime_mem -= calculate_fwd_out(in_node)
                         grad_in_computed[in_node] = True
+                    else:
+                        runtime_mem -= calculate_fwd_out(in_node)
+
+                # # free bwd_mem_out
+                # bwd_deps[node] = len(node.all_input_nodes)
+                # for user_node in node.users:
+                #     if user_node in bwd_deps:
+                #         bwd_deps[user_node] -= 1
+                #         if bwd_deps[user_node] <= 0:
+                #             runtime_mem -= user_node.meta['bwd_mem_out']
 
                 if runtime_mem < 0:
                     raise RuntimeError(f"region id: {region.r_id}, node name: {node.name}, "
@@ -471,6 +482,7 @@ class AsynGreedySolver:
 
         # backward
         grad_in_computed = {}
+        bwd_deps = {}
         for region in self.region_list.__reversed__():
 
             # parameter prefetch
@@ -505,22 +517,30 @@ class AsynGreedySolver:
 
                 runtime_mem = runtime_mem - node.meta['bwd_mem_tmp'] - calculate_fwd_tmp(node)
 
-                # TODO 需要考虑有多个user node 的情况，当前只释放了一个bwd_out
-                # release grad_in of current node
-                for grad_in in node.meta["fwd_out"]:
-                    if isinstance(grad_in, torch.Tensor):
-                        runtime_mem -= grad_in.numel() * grad_in.element_size()
+                # # TODO 需要考虑有多个user node 的情况，当前只释放了一个bwd_out
+                # # release grad_in of current node
+                # for grad_in in node.meta["fwd_out"]:
+                #     if isinstance(grad_in, torch.Tensor):
+                #         runtime_mem -= grad_in.numel() * grad_in.element_size()
+                #
+                # for in_node in list(node._input_nodes.keys()):
+                #     # # release fwd_in (fwd_out) of current node (input nodes)
+                #     # if calculate_fwd_out(in_node) > 0 and (not fwd_out_released[in_node]):
+                #     #     runtime_mem -= calculate_fwd_out(in_node)
+                #     #     fwd_out_released[in_node] = True
+                #
+                #     # map multiple gradients of output to one tensor
+                #     if grad_in_computed.get(in_node, False):
+                #         runtime_mem -= calculate_fwd_out(in_node)
+                #         grad_in_computed[in_node] = True
 
-                for in_node in list(node._input_nodes.keys()):
-                    # # release fwd_in (fwd_out) of current node (input nodes)
-                    # if calculate_fwd_out(in_node) > 0 and (not fwd_out_released[in_node]):
-                    #     runtime_mem -= calculate_fwd_out(in_node)
-                    #     fwd_out_released[in_node] = True
-
-                    # map multiple gradients of output to one tensor
-                    if grad_in_computed.get(in_node, False):
-                        runtime_mem -= calculate_fwd_out(in_node)
-                        grad_in_computed[in_node] = True
+                # free bwd_mem_out
+                bwd_deps[node] = len(node.all_input_nodes)
+                for user_node in node.users:
+                    if user_node in bwd_deps:
+                        bwd_deps[user_node] -= 1
+                        if bwd_deps[user_node] <= 0:
+                            runtime_mem -= user_node.meta['bwd_mem_out']
 
             # release parameter and offload gradient in region
             if region.region_shared_param is None:

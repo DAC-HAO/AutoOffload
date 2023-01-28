@@ -108,6 +108,7 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
             #         runtime_mem -= calculate_fwd_out(in_node)
             #         grad_in_computed[in_node] = True
 
+            # free bwd_mem_out
             bwd_deps[node] = len(node.all_input_nodes)
             for user_node in node.users:
                 if user_node in bwd_deps:
