@@ -66,18 +66,19 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
 
             runtime_mem = runtime_mem + calculate_fwd_tmp(node) + calculate_fwd_out(node)
 
-            if (runtime_mem - act_peak_mem) / 1024 ** 2 > 1 or node.name.__contains__("transpose"):
-                print(f"n_name: {node.name} | fwd_mem_tmp={calculate_fwd_tmp(node) / 1024 ** 2:.3f} MB | "
-                      f"fwd_mem_out={calculate_fwd_out(node) / 1024 ** 2:.3f} MB | "
-                      f"bwd_mem_tmp={node.meta['bwd_mem_tmp'] / 1024 ** 2:.3f} MB | "
-                      f"bwd_mem_out={node.meta['bwd_mem_out'] / 1024 ** 2:.3f} MB | "
-                      f"fwd_out={node.meta['fwd_out']}")
+            # if (runtime_mem - act_peak_mem) / 1024 ** 2 > 1 or node.name.__contains__("transpose"):
+            #     print(f"n_name: {node.name} | fwd_mem_tmp={calculate_fwd_tmp(node) / 1024 ** 2:.3f} MB | "
+            #           f"fwd_mem_out={calculate_fwd_out(node) / 1024 ** 2:.3f} MB | "
+            #           f"bwd_mem_tmp={node.meta['bwd_mem_tmp'] / 1024 ** 2:.3f} MB | "
+            #           f"bwd_mem_out={node.meta['bwd_mem_out'] / 1024 ** 2:.3f} MB | "
+            #           f"fwd_out={node.meta['fwd_out']}")
 
             act_peak_mem = max(runtime_mem, act_peak_mem)
     print("forward peak memory size:", act_peak_mem / 1024 ** 2, "MB")
 
     # backward
     grad_in_computed = {}
+    bwd_deps = {}
     for region in region_list.__reversed__():
         for node in region.nodes.__reversed__():
             runtime_mem -= calculate_fwd_out(node)
@@ -90,22 +91,30 @@ def compute_act_peak_mem(region_list: List[Region]) -> float:
 
             runtime_mem = runtime_mem - node.meta['bwd_mem_tmp'] - calculate_fwd_tmp(node)
 
-            # TODO 需要考虑有多个user node 的情况，当前只释放了一个bwd_out
-            # release grad_in of current node
-            for grad_in in node.meta["fwd_out"]:
-                if isinstance(grad_in, torch.Tensor):
-                    runtime_mem -= grad_in.numel() * grad_in.element_size()
+            # # TODO 需要考虑有多个user node 的情况，当前只释放了一个bwd_out
+            # # release grad_in of current node
+            # for grad_in in node.meta["fwd_out"]:
+            #     if isinstance(grad_in, torch.Tensor):
+            #         runtime_mem -= grad_in.numel() * grad_in.element_size()
+            #
+            # for in_node in list(node._input_nodes.keys()):
+            #     # # release fwd_in (fwd_out) of current node (input nodes)
+            #     # if calculate_fwd_out(in_node) > 0 and (not fwd_out_released[in_node]):
+            #     #     runtime_mem -= calculate_fwd_out(in_node)
+            #     #     fwd_out_released[in_node] = True
+            #
+            #     # map multiple gradients of output to one tensor
+            #     if grad_in_computed.get(in_node, False):
+            #         runtime_mem -= calculate_fwd_out(in_node)
+            #         grad_in_computed[in_node] = True
 
-            for in_node in list(node._input_nodes.keys()):
-                # # release fwd_in (fwd_out) of current node (input nodes)
-                # if calculate_fwd_out(in_node) > 0 and (not fwd_out_released[in_node]):
-                #     runtime_mem -= calculate_fwd_out(in_node)
-                #     fwd_out_released[in_node] = True
+            bwd_deps[node] = len(node.all_input_nodes)
+            for user_node in node.users:
+                if user_node in bwd_deps:
+                    bwd_deps[user_node] -= 1
+                    if bwd_deps[user_node] <= 0:
+                        runtime_mem -= user_node.meta['bwd_mem_out']
 
-                # map multiple gradients of output to one tensor
-                if grad_in_computed.get(in_node, False):
-                    runtime_mem -= calculate_fwd_out(in_node)
-                    grad_in_computed[in_node] = True
     return act_peak_mem
 
 
