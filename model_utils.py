@@ -280,7 +280,7 @@ def t5_data_gen(device="meta"):
 @non_distributed_component_funcs.register(name='bert')
 def get_bert_components():
     vocab_size = 30522
-    seq_len = 8
+    seq_len = 16
     batchSize = 16
 
     def bert_model_builder(checkpoint=False):
@@ -300,8 +300,8 @@ def get_bert_components():
 @non_distributed_component_funcs.register(name='gpt2')
 def get_gpt2_components():
     vocab_size = 50257
-    seq_len = 8
-    batchSize = 8
+    seq_len = 16
+    batchSize = 16
 
     def gpt2_model_builder(checkpoint=False):
         model = GPTLMModel(hidden_size=1024, num_layers=12, num_attention_heads=16, vocab_size=vocab_size,
@@ -320,7 +320,7 @@ def get_gpt2_components():
 @non_distributed_component_funcs.register(name='albert')
 def get_albert_components():
     seq_len = 16
-    batchSize = 8
+    batchSize = 16
 
     def albert_model_builder(checkpoint=False):
         model = MyAlbert()
@@ -339,7 +339,7 @@ def get_albert_components():
 @non_distributed_component_funcs.register(name='bart')
 def get_bart_components():
     seq_len = 16
-    batchSize = 8
+    batchSize = 16
 
     def bart_model_builder(checkpoint=False):
         model = MyBart()
@@ -357,7 +357,7 @@ def get_bart_components():
 @non_distributed_component_funcs.register(name='xlnet')
 def get_xlnet_components():
     seq_len = 16
-    batchSize = 8
+    batchSize = 16
 
     def xlnet_model_builder(checkpoint=False):
         model = MyXL()
@@ -375,7 +375,7 @@ def get_xlnet_components():
 @non_distributed_component_funcs.register(name='t5')
 def get_t5_components():
     seq_len = 16
-    batchSize = 8
+    batchSize = 16
 
     def t5_model_builder(checkpoint=False):
         model = MyT5Encoder()
@@ -392,7 +392,7 @@ def get_t5_components():
 @non_distributed_component_funcs.register(name='opt')
 def get_opt_components():
     seq_len = 16
-    batchSize = 8
+    batchSize = 16
 
     def opt_model_builder(checkpoint=False):
         model = MyOPT()
@@ -517,19 +517,3 @@ def get_nested_net_components():
         return kwargs
 
     return nested_model_builder, neted_net_data_gen
-
-
-@non_distributed_component_funcs.register(name='toy_model')
-def get_toy_model_components():
-    batchSize = 8
-
-    def toy_model_builder(checkpoint=False):
-        model = ToyModel(checkpoint=checkpoint)
-        return model
-
-    def toy_model_data_gen(device="meta"):
-        data = torch.rand(int(batchSize), 1024, device=device)
-        kwargs = dict(x=data)
-        return kwargs
-
-    return toy_model_builder, toy_model_data_gen
