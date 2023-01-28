@@ -340,7 +340,7 @@ class AsynGreedySolver:
                                                                                                       offload_region)
                 if tmp_peak_mem_saving <= 0:
                     print("not reduce peak memory:", offload_region_id, host_region.r_id)
-                    continue
+                    # continue
 
                 if self._compare_profit(profit, max_profit):
                     undo_host_region = host_region
