@@ -261,8 +261,8 @@ class AsynGreedySolver:
                 self.peak_mem -= region_to_mem_saving_map[region_to_offload.r_id]
                 self.region_to_mem_saving_map[region_to_offload.r_id] = region_to_mem_saving_map[region_to_offload.r_id]
 
-            elif self.region_to_region_map.__len__() > 0 and self._repair_strategy():
-                pass
+            elif self.region_to_region_map.__len__() > 0:
+                self._repair_strategy()
             else:
                 raise RuntimeError(
                     f"can't find the offload strategy met the memory budget {self.memory_budget / 1024 ** 2} MB, "
@@ -274,12 +274,11 @@ class AsynGreedySolver:
             region_to_region_map.clear()
             region_to_mem_saving_map.clear()
 
-    def _eval_one_choice(self, use_peak=True):
+    def _eval_one_choice(self):
         peak_mem_saving, total_mem_saving = self._compute_mem_saving()
         assert peak_mem_saving >= 0
         extra_comm_cost = self._compute_extra_comm_cost()
-        mem_saving = peak_mem_saving if use_peak else total_mem_saving
-        profit = self._compute_offload_profit(mem_saving, extra_comm_cost)
+        profit = self._compute_offload_profit(peak_mem_saving, extra_comm_cost)
         # profit = self._compute_offload_profit(total_mem_saving, extra_comm_cost)
         return profit, peak_mem_saving, total_mem_saving
 
@@ -312,7 +311,7 @@ class AsynGreedySolver:
         host_region.region_to_prefetch = None
         offload_region.is_syn = True
 
-        profit, peak_mem_saving, total_mem_saving = self._eval_one_choice(use_peak=False)
+        profit, peak_mem_saving, total_mem_saving = self._eval_one_choice()
 
         host_region.region_to_prefetch = orig_prefetch
         offload_region.is_syn = orig_is_syn
@@ -322,14 +321,12 @@ class AsynGreedySolver:
     def _repair_strategy(self):
         print("repair.........................")
 
-        succeed = True
+        # succeed = True
 
         peak_mem_saving = 0
         while peak_mem_saving <= 0:
 
             max_profit = (0,)
-            # if self.region_to_region_map.__len__() == 0:
-            #     return
             undo_host_region = None
             undo_offload_region = None
 
@@ -352,11 +349,10 @@ class AsynGreedySolver:
                     max_profit = profit
 
             if undo_host_region is None and undo_offload_region is None:
-                succeed = False
-                print("repair failed!!!")
-                break
-                # undo_offload_region_id, undo_host_region = list(self.region_to_region_map.items())[0]
-                # undo_offload_region = self.region_list[undo_offload_region_id]
+                if self.region_to_region_map.__len__() == 0:
+                    return
+                undo_offload_region_id, undo_host_region = list(self.region_to_region_map.items())[0]
+                undo_offload_region = self.region_list[undo_offload_region_id]
 
             assert not undo_offload_region.is_syn
             undo_offload_region.is_syn = True
@@ -366,7 +362,7 @@ class AsynGreedySolver:
             self.region_to_region_map.pop(undo_offload_region.r_id)
             self.region_to_mem_saving_map[undo_offload_region.r_id] += peak_mem_saving
 
-        return succeed
+        # return succeed
 
     def _update_rumtime_mem_for_node(self):
         self._compute_mem_saving(update_flag=True)
