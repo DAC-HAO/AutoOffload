@@ -203,7 +203,7 @@ class AsynGreedySolver:
                 compute_timestamp += region.param_size / SystemConfig.BANDWIDTH
 
     def _call_solver_greedy(self):
-        peak_mem_saving, total_mem_saving = self._compute_mem_saving()
+        peak_mem_saving, total_mem_saving = self._compute_mem_saving(update_flag=True)
         assert peak_mem_saving == 0 and total_mem_saving == 0, \
             f"pms={peak_mem_saving / 1024 ** 2:.3f}MB, tms={total_mem_saving / 1024 ** 2:.3f}MB"
         print("region num", len(self.region_list))
