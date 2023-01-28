@@ -349,6 +349,7 @@ class AsynGreedySolver:
 
             if undo_host_region is None and undo_offload_region is None:
                 succeed = False
+                print("repair failed!!!")
                 break
 
             assert not undo_offload_region.is_syn
