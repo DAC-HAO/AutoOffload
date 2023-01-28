@@ -327,7 +327,8 @@ class AsynGreedySolver:
         while peak_mem_saving <= 0:
 
             max_profit = (0,)
-            # undo_offload_region = self.region_list[list(self.region_to_region_map.keys())[0]]
+            if self.region_to_region_map.__len__() == 0:
+                return True
             undo_offload_region_id, undo_host_region = list(self.region_to_region_map.items())[0]
             undo_offload_region = self.region_list[undo_offload_region_id]
 
