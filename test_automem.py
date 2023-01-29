@@ -24,6 +24,7 @@ get_components_func = non_distributed_component_funcs.get_callable(args.mn)
 model_builder, data_gen = get_components_func()
 data_args = data_gen(device="cpu")
 model = model_builder()
+model.train()
 
 param_size = parameter_size(model) / 1024 ** 2
 print("init param size: ", param_size)
@@ -40,18 +41,20 @@ torch.cuda.synchronize()
 torch.cuda.reset_peak_memory_stats()
 start_time = time.time()
 
-# prof = torch.profiler.profile(
-#         schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
-#         on_trace_ready=torch.profiler.tensorboard_trace_handler('./log/offload'),
-#         record_shapes=True,
-#         with_stack=True)
-# prof.start()
-# prof.step()
-loss = torch.sum(model(**data_args))
-print(loss)
-loss.backward()
-# prof.step()
-# prof.stop()
+with torch.profiler.profile(
+        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler('./log/resnet18'),
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True
+) as prof:
+    for step in range(20):
+        if step >= (1 + 1 + 3) * 2:
+            break
+        loss = torch.sum(model(**data_args))
+        print(loss)
+        loss.backward()
+        prof.step()
 
 torch.cuda.synchronize()
 

@@ -130,3 +130,9 @@ def is_first_shared_region(region: Region) -> bool:
 
 def is_last_shared_region(region: Region) -> bool:
     return region.region_shared_param is not None and region.r_id > region.region_shared_param.r_id
+
+
+def zero_grad(model: torch.nn.Module):
+    for n,p in model.named_parameters():
+        if p.grad is not None:
+            p.grad = None
