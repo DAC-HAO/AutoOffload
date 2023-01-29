@@ -34,7 +34,7 @@ def train(data=None):
 
 # build model
 device = torch.device("cuda:0")
-get_components_func = non_distributed_component_funcs.get_callable('simplenet')
+get_components_func = non_distributed_component_funcs.get_callable('alexnet')
 model_builder, data_gen = get_components_func()
 data_args = data_gen(device=device)
 model = model_builder().cuda(device)
