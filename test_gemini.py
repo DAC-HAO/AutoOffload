@@ -6,10 +6,10 @@ import torch
 import torch.multiprocessing as mp
 
 import colossalai
+from colossalai.nn.optimizer import HybridAdam
 from colossalai.gemini.chunk import ChunkManager, search_chunk_configuration
 from colossalai.gemini.gemini_mgr import GeminiManager
-from colossalai.nn.parallel import ZeroDDP
-from colossalai.tensor import ProcessGroup
+from colossalai.nn.parallel import zero_model_wrapper, zero_optim_wrapper
 from colossalai.testing import parameterize
 from colossalai.utils import free_port
 from colossalai.utils.cuda import get_current_device
@@ -22,8 +22,8 @@ from model_utils import *
 
 @parameterize('init_device', [get_current_device()])
 @parameterize('placement_policy', ['cpu'])
-@parameterize('keep_gather', [True])
-@parameterize('model_name', ['gpt2'])
+@parameterize('keep_gather', [False])
+@parameterize('model_name', ['mlp'])
 @parameterize('use_grad_checkpoint', [False])
 def exam_gpt_fwd_bwd(placement_policy,
                      keep_gather,
@@ -33,58 +33,67 @@ def exam_gpt_fwd_bwd(placement_policy,
     get_components_func = non_distributed_component_funcs.get_callable(model_name)
     model_builder, data_gen = get_components_func()
 
-    torch.cuda.set_per_process_memory_fraction(0.1, 0)
+    torch.cuda.set_per_process_memory_fraction(0.03, 0)
     torch.cuda.empty_cache()
 
     start_time = time.time()
     set_seed(42)
     with ColoInitContext(device=torch.device('cpu')):
         model = model_builder(use_grad_checkpoint)
+    optimizer = HybridAdam(model.parameters(), lr=1e-3)
 
     param_size = parameter_size(model) / 1024 ** 2
     init_time = time.time() - start_time
     print(f"init_param_size={param_size:.3f} MB | init_model_time={init_time:.3f} s")
     data_args = data_gen(device=init_device)
 
-    world_size = torch.distributed.get_world_size()
-    config_dict, _ = search_chunk_configuration(model, search_range_mb=1, search_interval_byte=100)
-    config_dict[world_size]['chunk_size'] = 1024 * 1024 * 50
-    config_dict[world_size]['keep_gathered'] = keep_gather
-    chunk_manager = ChunkManager(config_dict, init_device=torch.device('cpu'))
-    gemini_manager = GeminiManager(placement_policy, chunk_manager)
-    model = ZeroDDP(model, gemini_manager, pin_memory=True)
+    gemini_config = dict(strict_ddp_mode=False,
+                         device=torch.device('cpu'),
+                         placement_policy=placement_policy,
+                         pin_memory=True,
+                         hidden_dim=8192,
+                         search_range_mb=128)
+    model = zero_model_wrapper(model, 3, gemini_config)
+    optim_config = dict(reduce_bucket_size=12 * 1024 * 1024, overlap_communication=True, verbose=True)
 
-    pg = ProcessGroup()
-
-    set_seed(pg.dp_local_rank())
+    optimizer = zero_optim_wrapper(model, optimizer, optim_config=optim_config)
 
     torch.cuda.synchronize()
     torch.cuda.reset_peak_memory_stats()
-    start_time = time.time()
+
+    time_list = []
 
     with torch.profiler.profile(
-            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
             on_trace_ready=torch.profiler.tensorboard_trace_handler('./log/gemini_' + model_name),
             record_shapes=True,
             profile_memory=True,
             with_stack=True
     ) as prof:
         for step in range(10):
-            if step >= (1 + 1 + 3) * 1:
-                break
             set_seed(42)
+            data_args = data_gen(device=init_device)
+            optimizer.zero_grad()
+            torch.cuda.synchronize()
+            start_time = time.time()
             loss = torch.mean(model(**data_args))
-            model.backward(loss)
+            optimizer.backward(loss)
+            torch.cuda.synchronize()
+            time_list.append(time.time() - start_time)
+            optimizer.step()
+            prof.step()
 
     torch.cuda.synchronize()
 
-    exec_time = time.time() - start_time
+    exec_time = sum(sorted(time_list)[:5]) / 5
     runtime_peak_mem_alc = torch.cuda.max_memory_allocated() / 1024 ** 2
     runtime_peak_mem_res = torch.cuda.max_memory_reserved() / 1024 ** 2
     print(
         f'|exec_time={exec_time:.3f} s | param_size={param_size:.3f} MB '
         f'| runtime_peak_mem_alc={runtime_peak_mem_alc:.3f} MB| runtime_peak_mem_res={runtime_peak_mem_res:.3f} MB|'
     )
+
+    print(time_list)
 
 
 def run_dist(rank, world_size, port):

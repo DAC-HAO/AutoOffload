@@ -2,9 +2,7 @@ from typing import List, Any
 import torch
 from torch.fx import Graph, Node
 
-from offload_strategy import OffloadStrategiesVector
-from strategy_generator import StrategyGenerator
-from util import ModelParameters, NodeInfo, Region
+from util import NodeInfo, Region
 
 
 class OffloadStrategiesConstructor:
@@ -26,7 +24,7 @@ class OffloadStrategiesConstructor:
         self.no_strategy_nodes = []
         self.cnode = cnode
         self.only_param_ops = []
-        self.param_to_region_map = {}
+        self.param_to_region = {}
 
     def _linearize_graph(self) -> List[Region]:
         """Linearizing the graph
@@ -154,25 +152,6 @@ class OffloadStrategiesConstructor:
             if n.name.__contains__("transpose") and n.meta['fwd_out'][0].dim() <= 2:
                 n.meta['fwd_out'] = []
 
-        def _is_sink() -> bool:
-            """Check if we can free all dependencies
-
-            Returns:
-                bool
-            """
-
-            def _is_inplace(n: Node):
-                """Get the inplace argument from ``torch.fx.Node``
-                """
-                inplace = False
-                if n.op == "call_function":
-                    inplace = n.kwargs.get("inplace", False)
-                elif n.op == "call_module":
-                    inplace = getattr(n.graph.owning_module.get_submodule(n.target), "inplace", False)
-                return inplace
-
-            return not sum([v for _, v in deps.items()]) and not any(map(_is_inplace, n.users))
-
         # make sure that item in cnode is valid
         if self.cnode:
             for name in self.cnode:
@@ -181,7 +160,6 @@ class OffloadStrategiesConstructor:
                         f"Common node {name} is not an input of the model."
                 except StopIteration:
                     raise ValueError(f"Common node name {name} not in graph.")
-
         else:
             self.cnode = []
 
@@ -192,7 +170,7 @@ class OffloadStrategiesConstructor:
 
         deps = {}
         region_list = []
-        region = Region(r_id=region_id, nodes=[], param_indices=[])
+        region = Region(r_id=region_id, nodes=[], fp16_params=[], shared_rid=region_id)
 
         act_n = None
 
@@ -212,7 +190,7 @@ class OffloadStrategiesConstructor:
                         region.nodes = region.nodes[:border_n_idx + 1]
                     region_list.append(region)
                     region_id += 1
-                    region = Region(r_id=region_id, nodes=ns, param_indices=[])
+                    region = Region(r_id=region_id, nodes=ns, fp16_params=[], shared_rid=region_id)
 
                 _exception_node_handling()
                 region.nodes.append(n)
@@ -220,12 +198,11 @@ class OffloadStrategiesConstructor:
                 node_id += 1
 
                 # if the node could free all dependencies in graph
-                # we could begin a new node
-                # if _is_sink() or _is_param_comp_end():
+                # we could begin a new region
                 if _is_param_comp_end():
                     region_list.append(region)
                     region_id += 1
-                    region = Region(r_id=region_id, nodes=[], param_indices=[])
+                    region = Region(r_id=region_id, nodes=[], fp16_params=[], shared_rid=region_id)
 
                 # propagate common node attr if possible
                 if len(n.all_input_nodes) == len([node for node in n.all_input_nodes if node.name in self.cnode
@@ -249,25 +226,21 @@ class OffloadStrategiesConstructor:
     def _set_node_and_region_info(self, node_id: int, cur_n: Node, cur_reg: Region):
 
         node_info = NodeInfo(node_id)
-        node_info.param_indices = []
 
         if cur_n.op == 'call_module':
             target = cur_n.target
             submod = self.root_module.get_submodule(target)
             for p in list(submod.parameters(recurse=False)):
 
-                if p in self.param_to_region_map:
+                if p in self.param_to_region:
                     print(f"region {cur_reg.r_id} param existed! {p.data.numel() * p.data.element_size() / 1024 ** 2}")
-                    cur_reg.region_shared_param = self.param_to_region_map[p]
-                    self.param_to_region_map[p].region_shared_param = cur_reg
+                    cur_reg.shared_rid = self.param_to_region[p].r_id
+                    self.param_to_region[p].shared_rid = cur_reg.r_id
                 else:
-                    self.param_to_region_map[p] = cur_reg
+                    self.param_to_region[p] = cur_reg
 
-                node_info.param_indices.append(ModelParameters.param_idx)
                 node_info.param_size += p.data.numel() * p.data.element_size()
-                ModelParameters.fp16_params.append(p)
-                ModelParameters.fp32_master_params.append(p.detach().clone().float().pin_memory())
-                ModelParameters.param_idx += 1
+                cur_reg.fp16_params.append(p)
 
         elif cur_n.op == "get_attr":
             attr_itr = self.root_module
@@ -277,23 +250,19 @@ class OffloadStrategiesConstructor:
 
             if isinstance(attr_itr, torch.nn.Parameter):
 
-                if attr_itr in self.param_to_region_map:
+                if attr_itr in self.param_to_region:
                     print(
                         f"region {cur_reg.r_id} param existed! {attr_itr.data.numel() * attr_itr.data.element_size() / 1024 ** 2}")
-                    cur_reg.region_shared_param = self.param_to_region_map[attr_itr]
-                    self.param_to_region_map[attr_itr].region_shared_param = cur_reg
+                    cur_reg.shared_rid = self.param_to_region[attr_itr].r_id
+                    self.param_to_region[attr_itr].shared_rid = cur_reg.r_id
                 else:
-                    self.param_to_region_map[attr_itr] = cur_reg
+                    self.param_to_region[attr_itr] = cur_reg
 
-                node_info.param_indices.append(ModelParameters.param_idx)
                 node_info.param_size += attr_itr.data.numel() * attr_itr.data.element_size()
-                ModelParameters.fp16_params.append(attr_itr)
-                ModelParameters.fp32_master_params.append(attr_itr.detach().clone().float().pin_memory())
-                ModelParameters.param_idx += 1
+                cur_reg.fp16_params.append(attr_itr)
 
         cur_n.node_info = node_info
         cur_reg.param_size += node_info.param_size
-        cur_reg.param_indices.extend(node_info.param_indices)
 
-        if cur_reg.region_shared_param is not None and cur_reg.r_id > cur_reg.region_shared_param.r_id:
-            cur_reg.param_size = cur_reg.region_shared_param.param_size
+        # if cur_reg.region_shared_param is not None and cur_reg.r_id > cur_reg.region_shared_param.r_id:
+        #     cur_reg.param_size = cur_reg.region_shared_param.param_size

@@ -7,47 +7,37 @@ from torch.fx import Graph, Node
 from colossalai.fx.profiler import (calculate_fwd_out, calculate_fwd_tmp, calculate_fwd_in, is_compatible_with_meta,
                                     parameter_size)
 
-from offload_strategy import OffloadStrategiesVector
-
 
 @dataclass
 class Region:
     r_id: int = 0
     is_offload: bool = False
     nodes: List[Node] = None
-    param_indices: List[int] = None
     param_size: int = 0
-    # out_node: Node = None
-    region_to_prefetch = None
     is_syn: bool = False
     region_shared_param = None
+    fwd_prefetch_region = None
+    bwd_prefetch_region = None
+    fp16_params: List[torch.nn.Parameter] = None
+    shared_rid: int = 0
 
 
-class ModelParameters:
-    param_idx = 0
-    fp16_params = []
-    fp32_master_params = []
-    # param_offload_dict = {}
-
-
-class GlobalCudaInfo:
+class OffloadManager:
     h2d_stream = torch.cuda.Stream()
-    prefetch_event_map = {}
+    d2h_stream = torch.cuda.Stream()
+    fwd_prefetch_event_map = {}
+    bwd_prefetch_event_map = {}
+    region_list = []
+    param_fp16_to_fp32 = {}
+    param_fp16_to_grad = {}
 
 
 @dataclass
 class NodeInfo:
     node_id: int = 0
     param_size: float = 0
-    offload_param_flag: bool = False
-    param_indices: List = None
     runtime_fwd_mem: float = 0
     runtime_bwd_mem: float = 0
-    offload_strategies_vector: OffloadStrategiesVector = None
-    # asyn
-    node_to_prefetch: Node = None
-    syn_upload_flag: bool = False
-    prefetch_end_timestamp: float = 0
 
 
 class ExeType(Enum):
@@ -106,11 +96,11 @@ def compute_max_param_mem(region_list: List[Region]) -> float:
 
 
 def compute_total_param_mem(region_list: List[Region]) -> float:
-    return sum(region.param_size for region in region_list if requires_upload_p_in_fwd(region))
+    return sum(region.param_size for region in region_list if region.r_id <= region.shared_rid)
 
 
 def requires_upload_p_in_fwd(region: Region):
-    return region.param_size > 0 and (
+    return region.param_size and (
             region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
             region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload))
 
@@ -123,16 +113,3 @@ def requires_release_p_in_bwd(region: Region):
     return region.region_shared_param is None or region.r_id < region.region_shared_param.r_id or (
             region.r_id > region.region_shared_param.r_id and region.region_shared_param.is_offload)
 
-
-def is_first_shared_region(region: Region) -> bool:
-    return region.region_shared_param is not None and region.r_id < region.region_shared_param.r_id
-
-
-def is_last_shared_region(region: Region) -> bool:
-    return region.region_shared_param is not None and region.r_id > region.region_shared_param.r_id
-
-
-def zero_grad(model: torch.nn.Module):
-    for n,p in model.named_parameters():
-        if p.grad is not None:
-            p.grad = None
